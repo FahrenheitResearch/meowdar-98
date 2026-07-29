@@ -111,6 +111,7 @@ const preprocessingRelayClient = createRadarClient({
       assert.equal(providerSiteId, "2");
       preprocessingOptions = options;
       await options.fetch("https://thredds.nci.example/daily.zip", { headers: { Range: "bytes=0-0" } });
+      await options.fetch(new Request("https://thredds.nci.example/daily.zip", { headers: { Range: "bytes=1-1" } }));
       return loop("nci-delayed-frame", "2026-07-26T05:00:00Z");
     },
   },
@@ -126,10 +127,16 @@ const preprocessingRelayClient = createRadarClient({
 const preprocessingRelaySession = await preprocessingRelayClient.open("AU:2", { maxAgeMinutes: 60 });
 assert.equal(preprocessingOptions.prefetchBytes, true);
 assert.equal(preprocessingOptions.urlTransform, null);
-assert.deepEqual(preprocessingRelayRequests, [[
-  "https://relay.example/?url=https%3A%2F%2Fthredds.nci.example%2Fdaily.zip&__bowecho_range=bytes%3D0-0",
-  "bytes=0-0",
-]]);
+assert.deepEqual(preprocessingRelayRequests, [
+  [
+    "https://relay.example/?url=https%3A%2F%2Fthredds.nci.example%2Fdaily.zip&__bowecho_range=bytes%3D0-0",
+    "bytes=0-0",
+  ],
+  [
+    "https://relay.example/?url=https%3A%2F%2Fthredds.nci.example%2Fdaily.zip&__bowecho_range=bytes%3D1-1",
+    undefined,
+  ],
+]);
 assert.equal(preprocessingRelaySession.provenance.transport, "relay");
 preprocessingRelaySession.destroy();
 

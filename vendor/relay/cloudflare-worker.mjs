@@ -114,7 +114,11 @@ async function fetchAllowedUpstream(upstream, init, env) {
         || ([301, 302].includes(response.status) && currentInit.method === "POST")) {
       const headers = new Headers(currentInit.headers);
       headers.delete("content-type");
-      currentInit = { ...currentInit, method: "GET", headers, body: undefined };
+      currentInit = {
+        method: "GET",
+        headers,
+        ...(currentInit.cache ? { cache: currentInit.cache } : {}),
+      };
     }
   }
   throw new Error("Upstream redirect limit exceeded");
@@ -163,7 +167,6 @@ export default {
       return textResponse(error.message, status, origin);
     }
 
-    const isRangeRequest = request.headers.has("range");
     let requestBody;
     if (request.method === "POST") {
       if (!POST_ALLOWED_HOSTS.has(upstream.hostname.toLowerCase())) {
@@ -198,32 +201,26 @@ export default {
       const value = request.headers.get(name);
       if (value) requestHeaders.set(name, value);
     }
-    const upstreamRequest = new Request(upstream, {
+    const isRangeRequest = request.headers.has("range");
+    const upstreamInit = {
       method: request.method,
       headers: requestHeaders,
       body: requestBody,
-      redirect: "follow",
-      cache: isRangeRequest ? "no-store" : undefined,
-    });
+      ...(isRangeRequest ? { cache: "no-store" } : {}),
+    };
 
-    const cache = caches.default;
-    const canUseCache = request.method === "GET" && !isRangeRequest;
+    const cache = isRangeRequest ? null : caches.default;
     const cacheKeyUrl = new URL(request.url);
     cacheKeyUrl.searchParams.set("__bowecho_cache", EDGE_CACHE_VERSION);
     const cacheKey = new Request(cacheKeyUrl, { method: request.method, headers: requestHeaders });
-    let response = canUseCache ? await cache.match(cacheKey) : null;
+    let response = request.method === "GET" && !isRangeRequest ? await cache.match(cacheKey) : null;
     if (!response) {
       try {
-        response = await fetchAllowedUpstream(upstream, {
-          method: upstreamRequest.method,
-          headers: upstreamRequest.headers,
-          body: requestBody,
-          cache: isRangeRequest ? "no-store" : undefined,
-        }, env);
+        response = await fetchAllowedUpstream(upstream, upstreamInit, env);
       } catch (error) {
         return textResponse(`Upstream fetch rejected: ${error.message || error}`, 502, origin);
       }
-      if (canUseCache && response.ok) {
+      if (request.method === "GET" && response.ok && !isRangeRequest) {
         const cacheResponse = response.clone();
         const cacheHeaders = new Headers(cacheResponse.headers);
         cacheHeaders.set("cache-control", EDGE_CACHE_CONTROL);

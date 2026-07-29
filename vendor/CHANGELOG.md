@@ -1,5 +1,10 @@
 # BowEcho Radar Toolbox Changelog
 
+## 0.2.1
+
+- Added range-specific relay cache keys so older relay deployments cannot satisfy ZIP byte-range reads with cached full-object responses.
+- Hardened the bundled Cloudflare Worker to bypass Cache API reads and writes for range requests, use `cache: "no-store"` across upstream redirects, preserve partial-response headers, and return `Cache-Control: no-store`.
+
 ## 0.2.0
 
 - Added the provider-independent `createRadarClient`, `UniversalRadarClient`, and `UniversalRadarSession` APIs.
@@ -8,9 +13,11 @@
 - Added loop completeness and freshness validation with last-source error diagnostics.
 - Added direct, custom-fetch, and optional relay transports with per-loop source provenance and attempt receipts.
 - Added a dependency-free international site-picker example and an allowlisted byte-preserving Cloudflare Worker relay template.
-- Reached browser planner parity with all 14 BowEcho international provider families, including ranged NCI ZIP-member reads, Piemonte volumes, Lombardia gzip/multipart volumes, KAIA POST discovery, and MeteoRomania multipart volumes.
-- Added built-in native-to-ORD failover for overlapping Estonia and Romania logical radars and source-aware freshness policies for delayed archives.
+- Reached browser planner parity with all 14 current native BowEcho international families, including NCI Australia, ARPA Piemonte, ARPA Lombardia, KAIA Estonia, and ANM MeteoRomania.
+- Added native/ORD source reconciliation for Estonia and Romania, source-aware freshness policies for delayed archives, NCI ZIP-member range access, Lombardia gzip preprocessing, bounded KAIA relay POST, and complete-cycle ORD PVOL/SCAN selection.
 - Preserved international/community georeferencing context across cached product and cut rerenders so provider-native IDs are never reinterpreted as NEXRAD sites.
+- Added community GR2A logical sites, live NEXRAD inventory helpers, product fallback, semantic-failure transport deduplication, and exhaustive browser live-matrix coverage.
+- Added the native-PPI worker/WASM surface and updated the checked-in WASM decoder for HDF5-v2 ODIM files.
 - Preserved the complete 0.1 provider-specific API without behavioral changes.
 
 ## 0.1.0

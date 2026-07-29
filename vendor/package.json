@@ -1,6 +1,6 @@
 {
   "name": "@fahrenheitresearch/bowecho-radar-toolbox",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Client-side BowEcho radar SDK with logical global sites, source failover, and WASM decoding.",
   "license": "MIT OR Apache-2.0",
   "type": "module",

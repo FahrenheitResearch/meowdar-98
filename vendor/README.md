@@ -64,8 +64,10 @@ See [`examples/universal-international-radar.html`](examples/universal-internati
 Install the release tarball or self-host the release directory unchanged:
 
 ```bash
-npm install https://github.com/FahrenheitResearch/bowecho-radar-toolbox/releases/download/v0.2.0/fahrenheitresearch-bowecho-radar-toolbox-0.2.0.tgz
+npm install https://github.com/FahrenheitResearch/bowecho-radar-toolbox/releases/download/v0.2.1/fahrenheitresearch-bowecho-radar-toolbox-0.2.1.tgz
 ```
+
+See the [`0.2.1` release notes](docs/RELEASE_0.2.1.md) for the byte-range relay compatibility and cache-isolation fixes.
 
 The scoped package is prepared for a future npm-registry publication but is not
 currently published there. The module creates `worker.js`, which loads the files

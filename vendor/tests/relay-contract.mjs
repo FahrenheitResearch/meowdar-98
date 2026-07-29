@@ -26,13 +26,18 @@ globalThis.fetch = async (request) => {
   if (request.url.endsWith("/redirect-post")) {
     return new Response(null, { status: 307, headers: { location: "https://opendata.dwd.de/not-a-post-endpoint" } });
   }
-  if (request.headers.has("range")) {
-    return new Response(new Uint8Array([1, 2, 3]), {
+  if (request.url.endsWith("/range-redirect")) {
+    return new Response(null, { status: 302, headers: { location: "https://opendata.dwd.de/range-target" } });
+  }
+  if (request.url.endsWith("/range-target")) {
+    return new Response(new Uint8Array([2, 3]), {
       status: 206,
       headers: {
+        "accept-ranges": "bytes",
+        "cache-control": "public, max-age=7200",
+        "content-length": "2",
+        "content-range": "bytes 1-2/3",
         "content-type": "application/octet-stream",
-        "content-range": "bytes 0-2/3",
-        "content-length": "3",
       },
     });
   }
@@ -56,23 +61,31 @@ assert.equal(response.headers.get("access-control-allow-origin"), "https://app.e
 assert.equal(response.headers.get("x-bowecho-upstream"), "opendata.dwd.de");
 assert.equal(response.headers.get("cache-control"), "public, max-age=60");
 
-const cacheMatchesBeforeRange = cacheMatchCalls;
-const cachePutsBeforeRange = cachePutCalls;
 fetchCalls = [];
+const rangeCacheMatchCalls = cacheMatchCalls;
+const rangeCachePutCalls = cachePutCalls;
 response = await worker.fetch(new Request(
-  `https://relay.test/radar?url=${encodeURIComponent("https://opendata.dwd.de/radar.bin")}`,
-  { headers: { origin: "https://app.example", range: "bytes=0-2" } },
+  `https://relay.test/radar?url=${encodeURIComponent("https://opendata.dwd.de/range-redirect")}`,
+  {
+    headers: {
+      origin: "https://app.example",
+      range: "bytes=1-2",
+    },
+  },
 ), { ALLOWED_ORIGINS: "https://app.example" }, context);
 assert.equal(response.status, 206);
-assert.equal(response.headers.get("content-range"), "bytes 0-2/3");
-assert.equal(response.headers.get("content-length"), "3");
+assert.deepEqual([...new Uint8Array(await response.arrayBuffer())], [2, 3]);
+assert.equal(response.headers.get("accept-ranges"), "bytes");
+assert.equal(response.headers.get("content-length"), "2");
+assert.equal(response.headers.get("content-range"), "bytes 1-2/3");
 assert.equal(response.headers.get("cache-control"), "no-store");
-assert.deepEqual([...new Uint8Array(await response.arrayBuffer())], [1, 2, 3]);
-assert.equal(fetchCalls.length, 1);
-assert.equal(fetchCalls[0].headers.get("range"), "bytes=0-2");
-assert.equal(fetchCalls[0].cache, "no-store");
-assert.equal(cacheMatchCalls, cacheMatchesBeforeRange, "Range requests must bypass Cache API reads");
-assert.equal(cachePutCalls, cachePutsBeforeRange, "Range requests must bypass Cache API writes");
+assert.equal(cacheMatchCalls, rangeCacheMatchCalls, "range requests must bypass cache.match");
+assert.equal(cachePutCalls, rangeCachePutCalls, "range requests must bypass cache.put");
+assert.equal(fetchCalls.length, 2, "the range fixture must exercise a redirect");
+for (const upstreamRequest of fetchCalls) {
+  assert.equal(upstreamRequest.headers.get("range"), "bytes=1-2");
+  assert.equal(upstreamRequest.cache, "no-store");
+}
 
 fetchCalls = [];
 response = await worker.fetch(relayRequest("https://example.com/private"), {}, context);

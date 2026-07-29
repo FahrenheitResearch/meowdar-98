@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="${BOWECHO_VERSION:-v0.2.0}"
+VERSION="${BOWECHO_VERSION:-v0.2.1}"
 REPOSITORY="FahrenheitResearch/bowecho-radar-toolbox"
 ASSET="bowecho-user-side-radar.zip"
 URL="https://github.com/${REPOSITORY}/releases/download/${VERSION}/${ASSET}"
