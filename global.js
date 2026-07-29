@@ -1,4 +1,4 @@
-import { createRadarClient } from "./vendor/radar-toolbox.js?v=meowdar98-universal3";
+import { createRadarClient } from "./vendor/radar-toolbox.js?v=meowdar98-universal4";
 
 const config = window.MEOWDAR_CONFIG || {};
 const ui = Object.fromEntries([
@@ -11,6 +11,10 @@ const ui = Object.fromEntries([
 const mapConfig = config.map || {};
 const radarSourceId = "meowdar98-global-radar";
 const radarLayerId = `${radarSourceId}-layer`;
+const sitePointSourceId = "meowdar98-radar-sites";
+const sitePointLayerId = `${sitePointSourceId}-points`;
+const sitePointHitLayerId = `${sitePointSourceId}-hit-targets`;
+const sitePillZoom = 4.2;
 
 const client = createRadarClient({
   relayUrl: config.radarRelayUrl || undefined,
@@ -113,13 +117,7 @@ function createSitePills() {
     button.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
-      if (!ui.loadingState.hidden) return;
-      ui.siteSearch.value = "";
-      ui.countrySelect.value = site.countryCode || "";
-      refreshSiteList(site.id);
-      updateSitePillSelection();
-      map?.flyTo({ center: [site.lon, site.lat], zoom: Math.max(6.2, map.getZoom()), duration: 500 });
-      await loadSelectedRadar();
+      await selectRadarSite(site);
     });
     ui.siteMarkerLayer.append(button);
     sitePills.set(site.id, button);
@@ -136,6 +134,70 @@ function compactSiteId(siteId) {
 function updateSitePillSelection() {
   const selected = ui.siteSelect.value;
   sitePills.forEach((button, siteId) => button.classList.toggle("selected", siteId === selected));
+  updateSitePointSelection();
+}
+
+async function selectRadarSite(site) {
+  if (!site || !ui.loadingState.hidden) return;
+  ui.siteSearch.value = "";
+  ui.countrySelect.value = site.countryCode || "";
+  refreshSiteList(site.id);
+  map?.flyTo({ center: [site.lon, site.lat], zoom: Math.max(6.2, map.getZoom()), duration: 500 });
+  await loadSelectedRadar();
+}
+
+function sitePointGeoJson() {
+  const selected = ui.siteSelect.value;
+  return {
+    type: "FeatureCollection",
+    features: sites
+      .filter((site) => Number.isFinite(Number(site.lon)) && Number.isFinite(Number(site.lat)))
+      .map((site) => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [Number(site.lon), Number(site.lat)] },
+        properties: {
+          siteId: site.id,
+          selected: site.id === selected,
+        },
+      })),
+  };
+}
+
+function updateSitePointSelection() {
+  map?.getSource(sitePointSourceId)?.setData?.(sitePointGeoJson());
+}
+
+function installSitePointLayers() {
+  if (!map || map.getSource(sitePointSourceId)) return;
+  map.addSource(sitePointSourceId, { type: "geojson", data: sitePointGeoJson() });
+  map.addLayer({
+    id: sitePointLayerId,
+    type: "circle",
+    source: sitePointSourceId,
+    paint: {
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 1, 3.5, 5, 5, 10, 6],
+      "circle-color": ["case", ["boolean", ["get", "selected"], false], "#ffff00", "#00b040"],
+      "circle-stroke-color": ["case", ["boolean", ["get", "selected"], false], "#000080", "#003d16"],
+      "circle-stroke-width": ["case", ["boolean", ["get", "selected"], false], 2.5, 1.25],
+    },
+  });
+  map.addLayer({
+    id: sitePointHitLayerId,
+    type: "circle",
+    source: sitePointSourceId,
+    paint: {
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 1, 9, 7, 14],
+      "circle-color": "#000000",
+      "circle-opacity": 0.001,
+    },
+  });
+  map.on("click", sitePointHitLayerId, (event) => {
+    const siteId = event.features?.[0]?.properties?.siteId;
+    const site = client.site(siteId);
+    if (site) void selectRadarSite(site);
+  });
+  map.on("mouseenter", sitePointHitLayerId, () => { map.getCanvas().style.cursor = "pointer"; });
+  map.on("mouseleave", sitePointHitLayerId, () => { map.getCanvas().style.cursor = ""; });
 }
 
 function scheduleSitePillPositions() {
@@ -152,9 +214,15 @@ function updateSitePillPositions() {
   const rect = ui.mapElement.getBoundingClientRect();
   if (!rect.width || !rect.height) return;
   const zoom = Number(map.getZoom());
+  const overview = zoom < sitePillZoom;
   const detail = zoom >= 7;
+  const selected = ui.siteSelect.value;
   ui.siteMarkerLayer.classList.toggle("detail", detail);
   sitePills.forEach((button, siteId) => {
+    if (overview && siteId !== selected) {
+      button.classList.add("offscreen");
+      return;
+    }
     const site = client.site(siteId);
     const point = map.project([site.lon, site.lat]);
     const margin = 70;
@@ -268,11 +336,15 @@ async function initializeMap() {
     map.on("load", () => {
       mapReady = true;
       map.resize();
+      installSitePointLayers();
       scheduleSitePillPositions();
       if (session) mountRadarMap(session.index, { fit: true });
     });
-    map.on("move", scheduleSitePillPositions);
-    map.on("zoom", scheduleSitePillPositions);
+    map.on("movestart", () => ui.siteMarkerLayer.classList.add("moving"));
+    map.on("moveend", () => {
+      ui.siteMarkerLayer.classList.remove("moving");
+      scheduleSitePillPositions();
+    });
     map.on("error", (event) => console.info("Basemap resource error", event?.error || event));
     window.addEventListener("resize", () => { map?.resize(); scheduleSitePillPositions(); });
     if (window.ResizeObserver) new ResizeObserver(() => { map?.resize(); scheduleSitePillPositions(); }).observe(ui.mapElement);
@@ -299,7 +371,7 @@ function mountRadarMap(index, options = {}) {
     if (map.getLayer(radarLayerId)) map.removeLayer(radarLayerId);
     if (existing) map.removeSource(radarSourceId);
     map.addSource(radarSourceId, specs.source);
-    map.addLayer({
+    const radarLayer = {
       ...specs.layer,
       paint: {
         ...specs.layer.paint,
@@ -307,7 +379,9 @@ function mountRadarMap(index, options = {}) {
         "raster-fade-duration": 0,
         "raster-resampling": "nearest",
       },
-    });
+    };
+    if (map.getLayer(sitePointLayerId)) map.addLayer(radarLayer, sitePointLayerId);
+    else map.addLayer(radarLayer);
     radarSourceSignature = signature;
   } else {
     existing.setCoordinates?.(specs.source.coordinates);

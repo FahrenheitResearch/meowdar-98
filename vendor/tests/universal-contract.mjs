@@ -13,6 +13,8 @@ assert.equal(logicalRadarSite("DK:06177")?.label, "Stevns");
 assert.equal(logicalRadarSite("KR:RKSG")?.country, "South Korea");
 assert.equal(logicalRadarSite("JP:RODN")?.country, "Japan");
 assert.equal(logicalRadarSite("US:RKJK"), null);
+assert.equal(logicalRadarSite("FR:FRTRE")?.sources[0]?.access, "relay-required");
+assert.equal(logicalRadarSite("FI:FIANJ")?.sources[0]?.access, "either");
 
 const loop = (id, volumeTime) => {
   const frame = { id, cacheKey: id, volumeTime, complete: true };
@@ -129,5 +131,40 @@ const semanticFailureClient = createRadarClient({
 });
 await assert.rejects(() => semanticFailureClient.open("ZZ:EMPTY"), /no frames for EMPTY/);
 assert.equal(semanticLoadAttempts, 1);
+
+const transportRequests = [];
+const relayRequiredClient = createRadarClient({
+  toolbox: { loadLoop() {} },
+  relayUrl: "https://relay.example/",
+  now: () => new Date("2026-07-29T05:00:00Z"),
+  fetch: async (url) => {
+    transportRequests.push(String(url));
+    return { ok: true, arrayBuffer: async () => new ArrayBuffer(0) };
+  },
+  includeNexrad: false,
+  includeInternational: false,
+  extraSites: [{
+    id: "ZZ:RELAY",
+    label: "Relay-required test radar",
+    country: "Testland",
+    countryCode: "ZZ",
+    lat: 1,
+    lon: 2,
+    sources: [{
+      id: "relay-source",
+      providerId: "fixture",
+      providerSiteId: "relay",
+      access: "relay-required",
+      async load({ options }) {
+        await options.fetch("https://upstream.example/volume");
+        return loop("relay-frame", "2026-07-29T04:59:00Z");
+      },
+    }],
+  }],
+});
+const relaySession = await relayRequiredClient.open("ZZ:RELAY");
+assert.equal(relaySession.provenance.transport, "relay");
+assert.deepEqual(transportRequests, ["https://relay.example/?url=https%3A%2F%2Fupstream.example%2Fvolume"]);
+relaySession.destroy();
 
 console.log("universal-contract ok");
