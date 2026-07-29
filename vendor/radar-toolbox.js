@@ -15,7 +15,7 @@ export {
 
 export const ARCHIVE_URL = "https://unidata-nexrad-level2.s3.amazonaws.com";
 export const CHUNKS_URL = "https://unidata-nexrad-level2-chunks.s3.amazonaws.com";
-export const WORKER_VERSION = "2026-06-23-native-ppi2";
+export const WORKER_VERSION = "2026-07-29-hdf5v2";
 export const EARTH_RADIUS_KM = 6371.0088;
 export const WEB_MERCATOR_RADIUS_M = 6378137;
 export const MAX_WEB_MERCATOR_LAT = 85.05112878;
@@ -889,6 +889,28 @@ export function parseS3StyleListing(textOrListing) {
     isTruncated: /^true$/i.test(xmlElementText(xml, "IsTruncated")),
     nextContinuationToken: xmlElementText(xml, "NextContinuationToken") || null,
   };
+}
+
+export function nexradRealtimeListingUrl(options = {}) {
+  return s3StyleListingUrl(options.baseUrl || CHUNKS_URL, {
+    delimiter: "/",
+    maxKeys: options.maxKeys ?? options.maxKeysPerPage ?? 1000,
+  });
+}
+
+export function parseNexradRealtimeSiteIds(textOrListing, options = {}) {
+  const known = new Set(Array.from(options.sites || RADAR_SITES)
+    .map((site) => normalizeSite(site?.id || site)));
+  return [...new Set(parseS3StyleListing(textOrListing).commonPrefixes
+    .map((prefix) => String(prefix || "").replace(/\/$/, "").toUpperCase())
+    .filter((site) => /^[A-Z0-9]{4,5}$/.test(site))
+    .filter((site) => !known.size || known.has(site)))]
+    .sort();
+}
+
+export async function nexradRealtimeSiteIds(options = {}) {
+  const url = nexradRealtimeListingUrl(options);
+  return parseNexradRealtimeSiteIds(await fetchText(url, options), options);
 }
 
 export function nexradArchiveDatePrefix(siteId, dateOrString = new Date()) {
@@ -3588,6 +3610,22 @@ export function loopTimeline(loop, options = {}) {
   });
 }
 
+async function metadataForAvailableProduct(toolbox, frame, requestedProduct, fallbackProducts = []) {
+  let product = normalizeProduct(requestedProduct);
+  let meta = await toolbox.frameMetadata(frame, product);
+  if ((meta.displayableCuts || []).length) return { product, meta };
+  for (const fallback of fallbackProducts) {
+    const candidate = normalizeProduct(fallback);
+    if (candidate === product) continue;
+    const candidateMeta = await toolbox.frameMetadata(frame, candidate);
+    if (!(candidateMeta.displayableCuts || []).length) continue;
+    product = candidate;
+    meta = candidateMeta;
+    break;
+  }
+  return { product, meta };
+}
+
 export class BowEchoRadarToolbox {
   constructor(options = {}) {
     this.archiveUrl = options.archiveUrl || ARCHIVE_URL;
@@ -3942,6 +3980,18 @@ export class BowEchoRadarToolbox {
 
   parseS3StyleListing(textOrListing) {
     return parseS3StyleListing(textOrListing);
+  }
+
+  nexradRealtimeListingUrl(options = {}) {
+    return nexradRealtimeListingUrl({ ...options, baseUrl: options.baseUrl || this.chunksUrl });
+  }
+
+  parseNexradRealtimeSiteIds(textOrListing, options = {}) {
+    return parseNexradRealtimeSiteIds(textOrListing, options);
+  }
+
+  nexradRealtimeSiteIds(options = {}) {
+    return nexradRealtimeSiteIds({ ...options, baseUrl: options.baseUrl || this.chunksUrl });
   }
 
   nexradArchiveDatePrefix(siteId, dateOrString = new Date()) {
@@ -4649,9 +4699,13 @@ export class BowEchoRadarToolbox {
       .map((entry) => entry?.frame || entry)
       .filter(Boolean);
     if (!frames.length) throw new Error("loadImportedLoop requires at least one imported frame");
-    const product = normalizeProduct(options.product);
     const metaFrame = frames[frames.length - 1];
-    const meta = await this.frameMetadata(metaFrame, product);
+    const { product, meta } = await metadataForAvailableProduct(
+      this,
+      metaFrame,
+      options.product,
+      options.fallbackProducts,
+    );
     const cut = resolveCut(meta, options.cut);
     const siteDescriptor = siteDescriptorFromInput(options.site)
       || siteDescriptorFromMeta(meta)
@@ -4720,7 +4774,7 @@ export class BowEchoRadarToolbox {
 
   async loadLoop(options = {}) {
     const site = normalizeSite(options.site);
-    const product = normalizeProduct(options.product);
+    let product = normalizeProduct(options.product);
     const frameCount = clampInt(options.frameCount ?? 6, 1, 20);
     const mode = options.mode || "live";
     options.onProgress?.({ stage: "list", site, mode });
@@ -4739,7 +4793,14 @@ export class BowEchoRadarToolbox {
     if (options.prefetchBytes) frames = await prefetchFrameSourceBytes(frames, options.fetch, options);
 
     const metaFrame = frames[frames.length - 1];
-    const meta = await this.frameMetadata(metaFrame, product);
+    const selection = await metadataForAvailableProduct(
+      this,
+      metaFrame,
+      product,
+      options.fallbackProducts,
+    );
+    product = selection.product;
+    const meta = selection.meta;
     const cut = resolveCut(meta, options.cut);
     options.onProgress?.({ stage: "render", site, product, cut, frames: frames.length });
 
@@ -5810,6 +5871,12 @@ const COUNTRY_NAME_CODES = {
   "united states": "US",
 };
 
+const NEXRAD_COUNTRY_OVERRIDES = {
+  RKJK: { country: "South Korea", countryCode: "KR" },
+  RKSG: { country: "South Korea", countryCode: "KR" },
+  RODN: { country: "Japan", countryCode: "JP" },
+};
+
 function normalizeLogicalRadarSiteId(value) {
   const raw = typeof value === "object" ? value?.id : value;
   const text = String(raw || "").trim();
@@ -5921,12 +5988,12 @@ function buildLogicalRadarCatalog(options = {}) {
   const byId = new Map();
   if (options.includeNexrad !== false) {
     for (const site of RADAR_SITES) {
-      const id = `US:${site.id}`;
+      const geography = NEXRAD_COUNTRY_OVERRIDES[site.id] || { country: "United States", countryCode: "US" };
+      const id = `${geography.countryCode}:${site.id}`;
       addLogicalSiteBinding(byId, {
         id,
         label: site.name,
-        country: "United States",
-        countryCode: "US",
+        ...geography,
         lat: site.lat,
         lon: site.lon,
       }, normalizedSourceBinding({
@@ -6015,6 +6082,13 @@ function relayTargetUrl(baseUrl, upstream) {
   const relay = new URL(String(baseUrl), globalThis.location?.href || "http://localhost/");
   relay.searchParams.set("url", String(upstream));
   return relay.toString();
+}
+
+function isTransportIndependentRadarFailure(error) {
+  const message = String(error?.message || error).trim();
+  return /^no (?:archive )?frames for\b/i.test(message)
+    || /^source returned (?:an empty radar loop|an incomplete radar volume)\b/i.test(message)
+    || /\bhas no displayable cuts\b/i.test(message);
 }
 
 async function prefetchFrameSourceBytes(frames, fetchImpl, options = {}) {
@@ -6238,6 +6312,7 @@ export class UniversalRadarClient {
         } catch (error) {
           attempts.push(this._attemptFailure(binding, transport.id, error, Date.now() - started));
           this._markFailure(binding, error);
+          if (isTransportIndependentRadarFailure(error)) break;
         }
       }
     }
@@ -6473,6 +6548,8 @@ export class UniversalRadarSession {
     this.site = cloneLogicalRadarSite(result.site);
     this.binding = cloneSourceBinding(result.binding);
     this.loop = result.loop;
+    if (result.loop?.product) this.options.product = result.loop.product;
+    if (result.loop?.cut !== undefined) this.options.cut = result.loop.cut;
     this.provenance = cloneCatalogRecord(result.provenance);
     this.attempts = result.attempts.map((attempt) => ({ ...attempt }));
   }

@@ -19,6 +19,10 @@ API key. Optional GOES GLM lightning is also decoded client-side.
   Direct-capable providers are fetched from the browser. Providers without
   browser CORS use the deployed, allowlisted, byte-preserving `radarRelayUrl`
   transport in `config.js`; decoding and rendering remain client-side.
+  The bundled BowEcho WASM includes the current HDF5-v2/AEMET decoding fixes,
+  live NEXRAD choices are intersected with the upstream realtime inventory,
+  and volumes without reflectivity automatically fall back to an available
+  velocity or correlation-coefficient moment.
 
 - **High-resolution full default.** Full mode renders to a 3072 × 3072
   backing canvas with native gate/bin sampling and nearest-neighbor map
