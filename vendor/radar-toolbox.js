@@ -6950,19 +6950,23 @@ function relayFetchFor(baseUrl, fetchImpl) {
   return (input, init = {}) => {
     const upstream = typeof input === "string" || input instanceof URL ? String(input) : input?.url;
     if (!upstream) throw new Error("relay fetch requires a URL");
-    const requestHeaders = new Headers(init.headers || input?.headers || undefined);
-    return fetcher(relayTargetUrl(baseUrl, upstream, {
-      range: requestHeaders.get("range"),
-    }), init);
+    const initRange = relayRangeHeader(init.headers);
+    const inputRange = relayRangeHeader(input?.headers);
+    return fetcher(relayTargetUrl(baseUrl, upstream, initRange ?? inputRange), init);
   };
 }
 
-function relayTargetUrl(baseUrl, upstream, options = {}) {
+function relayRangeHeader(headers) {
+  if (!headers) return null;
+  const normalized = new Headers(headers);
+  if (!normalized.has("range")) return null;
+  return String(normalized.get("range") || "").trim();
+}
+
+function relayTargetUrl(baseUrl, upstream, range = null) {
   const relay = new URL(String(baseUrl), globalThis.location?.href || "http://localhost/");
   relay.searchParams.set("url", String(upstream));
-  // The relay's Cache API key cannot vary on request headers. Give byte-range
-  // reads a URL identity that a cached full response can never satisfy.
-  if (options.range) relay.searchParams.set("__bowecho_range", String(options.range).slice(0, 128));
+  if (range !== null) relay.searchParams.set("__bowecho_range", range);
   return relay.toString();
 }
 

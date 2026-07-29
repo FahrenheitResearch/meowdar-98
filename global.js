@@ -1,4 +1,4 @@
-import { createRadarClient } from "./vendor/radar-toolbox.js?v=meowdar98-universal8";
+import { createRadarClient } from "./vendor/radar-toolbox.js?v=meowdar98-universal9";
 
 const config = window.MEOWDAR_CONFIG || {};
 const ui = Object.fromEntries([
