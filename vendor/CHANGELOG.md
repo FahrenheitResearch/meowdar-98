@@ -1,5 +1,15 @@
 # BowEcho Radar Toolbox Changelog
 
+## 0.2.0
+
+- Added the provider-independent `createRadarClient`, `UniversalRadarClient`, and `UniversalRadarSession` APIs.
+- Added stable country-prefixed logical radar IDs across NEXRAD and all browser international sites.
+- Added extensible preferred/fallback/archive source bindings, priority resolution, health cooldowns, and polling-time source failover.
+- Added loop completeness and freshness validation with last-source error diagnostics.
+- Added direct, custom-fetch, and optional relay transports with per-loop source provenance and attempt receipts.
+- Added a dependency-free international site-picker example and an allowlisted byte-preserving Cloudflare Worker relay template.
+- Preserved the complete 0.1 provider-specific API without behavioral changes.
+
 ## 0.1.0
 
 - Added browser palette import/export helpers for GR-style `.pal` files, color family binding, product compatibility, normalized palette validation, and WASM render-time custom palette application.

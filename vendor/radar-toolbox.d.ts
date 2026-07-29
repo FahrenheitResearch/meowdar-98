@@ -222,6 +222,136 @@ export interface InternationalRadarSite {
   siteFilteredDecode: boolean;
 }
 
+export type RadarSourceRole = "preferred" | "fallback" | "archive" | string;
+export type RadarSourceAccess = "direct" | "relay-required" | "either" | string;
+
+export interface RadarSourceBinding {
+  type: "bowecho-radar-source-binding-v1";
+  id: string;
+  providerId: string;
+  providerSiteId: string;
+  source: "nexrad" | "international" | string;
+  planner: "nexrad" | "international" | string;
+  role: RadarSourceRole;
+  priority: number;
+  format: SupportedByteFormatId | string | null;
+  access: RadarSourceAccess;
+  merge: boolean | "mixed";
+  siteFilteredDecode: boolean;
+  live: boolean;
+  archive: boolean;
+  attribution: string | null;
+  fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+  load?: (context: { binding: RadarSourceBinding; options: UniversalRadarOpenOptions; toolbox: BowEchoRadarToolbox }) => Promise<RadarLoop>;
+  poll?: (context: { binding: RadarSourceBinding; loop: RadarLoop; options: UniversalRadarOpenOptions; toolbox: BowEchoRadarToolbox }) => Promise<PollLiveResult>;
+  metadata: Record<string, unknown>;
+}
+
+export interface LogicalRadarSite {
+  type: "bowecho-logical-radar-site-v1";
+  id: string;
+  label: string;
+  name: string;
+  country: string;
+  countryCode: string;
+  lat: number;
+  lon: number;
+  dataClass: "polar-volume" | string;
+  formats: string[];
+  capabilities: {
+    live: boolean;
+    archive: boolean;
+    clientSide: boolean;
+    failover: boolean;
+  };
+  sources: RadarSourceBinding[];
+}
+
+export interface RadarSourceAttempt {
+  sourceId: string;
+  transport: "direct" | "relay" | "custom" | "unavailable" | string;
+  status: "selected" | "failed";
+  durationMs: number;
+  error?: string;
+}
+
+export interface RadarProvenance {
+  type: "bowecho-radar-provenance-v1";
+  logicalSiteId: string;
+  sourceId: string;
+  providerId: string;
+  providerSiteId: string;
+  transport: string;
+  selectedAt: string;
+  attempts: RadarSourceAttempt[];
+  catalogVersion: string;
+}
+
+export interface UniversalRadarOpenOptions extends Omit<RenderOptions, "site">, InternationalFetchOptions {
+  frames?: number;
+  sourceId?: string;
+  providerId?: string;
+  provider?: string;
+  excludeSourceIds?: string[];
+  forceProbe?: boolean;
+  relay?: boolean;
+  failover?: boolean;
+  followLatest?: boolean;
+  minimumFrames?: number;
+  maxAgeMinutes?: number | null | false;
+  validateLoop?: (loop: RadarLoop) => void;
+  signal?: AbortSignal;
+}
+
+export interface RadarClientOptions {
+  toolbox?: BowEchoRadarToolbox;
+  toolboxOptions?: ToolboxOptions;
+  defaults?: UniversalRadarOpenOptions;
+  cooldownMs?: number;
+  fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+  relayFetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+  relayUrl?: string | URL;
+  now?: () => Date;
+  includeNexrad?: boolean;
+  includeInternational?: boolean;
+  extraSites?: Array<Partial<LogicalRadarSite> & Pick<LogicalRadarSite, "id" | "lat" | "lon" | "sources">>;
+  sites?: Array<Partial<LogicalRadarSite> & Pick<LogicalRadarSite, "id" | "lat" | "lon" | "sources">>;
+  sourceBindings?: Array<Partial<RadarSourceBinding> & Pick<RadarSourceBinding, "id" | "providerSiteId"> & { logicalSiteId: string; site?: Partial<LogicalRadarSite> }>;
+}
+
+export interface LogicalRadarSiteOptions {
+  includeNexrad?: boolean;
+  includeInternational?: boolean;
+  extraSites?: RadarClientOptions["extraSites"];
+  sites?: RadarClientOptions["sites"];
+  sourceBindings?: RadarClientOptions["sourceBindings"];
+  query?: string;
+  country?: string | string[];
+  countries?: string | string[];
+  providerId?: string | string[];
+  providerIds?: string | string[];
+  providers?: string | string[];
+  dataClass?: string;
+  live?: boolean;
+}
+
+export interface RadarResolutionPlan {
+  type: "bowecho-radar-resolution-plan-v1";
+  site: LogicalRadarSite;
+  sources: RadarSourceBinding[];
+}
+
+export interface RadarSourceHealth {
+  sourceId: string;
+  successes: number;
+  failures: number;
+  consecutiveFailures: number;
+  lastSuccess: string | null;
+  lastFailure: string | null;
+  lastError: string | null;
+  cooldownUntil: number;
+}
+
 export interface InternationalPlanPart {
   url: string;
 }
@@ -2522,10 +2652,14 @@ export const COMMUNITY_RADAR_FEEDS: CommunityRadarFeed[];
 export const COMMUNITY_RADAR_MARKERS: CommunityRadarMarker[];
 export const SUPPORTED_BYTE_FORMATS: SupportedByteFormatDescriptor[];
 export const FRAME_PROVIDER_CATALOG: FrameProviderDescriptor[];
+export const UNIVERSAL_RADAR_CATALOG_VERSION: "1";
 
 export function createRadarToolbox(options?: ToolboxOptions): BowEchoRadarToolbox;
 export function createRadarSession(toolbox: BowEchoRadarToolbox, options?: RadarSessionOptions): RadarSession;
 export function createRadarSession(options?: RadarSessionOptions): RadarSession;
+export function createRadarClient(options?: RadarClientOptions): UniversalRadarClient;
+export function logicalRadarSites(options?: LogicalRadarSiteOptions): LogicalRadarSite[];
+export function logicalRadarSite(siteId: string | LogicalRadarSite, options?: LogicalRadarSiteOptions): LogicalRadarSite | null;
 export function frameProviders(): FrameProviderDescriptor[];
 export function supportedByteFormats(): SupportedByteFormatDescriptor[];
 export function supportedArchiveFormats(): SupportedByteFormatDescriptor[];
@@ -3038,5 +3172,62 @@ export class RadarSession {
   timeline(options?: { index?: number | "latest"; currentIndex?: number | "latest"; now?: number }): LoopTimelineEntry[];
   textureLayer(index?: number | "latest" | string, options?: RenderOptions): RadarTextureLayer;
   drawToCanvas(canvas: HTMLCanvasElement, index?: number | "latest" | string): RenderedFrame;
+  destroy(): void;
+}
+
+export class UniversalRadarClient {
+  constructor(options?: RadarClientOptions);
+  readonly toolbox: BowEchoRadarToolbox;
+  readonly catalog: LogicalRadarSite[];
+  readonly defaultOptions: UniversalRadarOpenOptions;
+  readonly cooldownMs: number;
+  sites(options?: LogicalRadarSiteOptions): LogicalRadarSite[];
+  site(siteRef: string | LogicalRadarSite): LogicalRadarSite | null;
+  resolve(siteRef: string | LogicalRadarSite, options?: UniversalRadarOpenOptions): RadarResolutionPlan;
+  sourceHealth(siteRef?: string | LogicalRadarSite): RadarSourceHealth[];
+  open(siteRef: string | LogicalRadarSite, options?: UniversalRadarOpenOptions): Promise<UniversalRadarSession>;
+}
+
+export interface UniversalRadarSessionSnapshot {
+  type: "bowecho-universal-radar-session-v1";
+  site: LogicalRadarSite;
+  source: RadarSourceBinding;
+  provenance: RadarProvenance;
+  length: number;
+  index: number;
+  product: string | null;
+  cut: number | null;
+  volumeTime: string | null;
+}
+
+export interface UniversalRadarPollResult {
+  status: "idle" | "updated" | "source-changed";
+  previousSourceId?: string;
+  sourceId?: string;
+  frame: FrameDescriptor | RenderedFrame | null;
+  session: UniversalRadarSession;
+  provenance: RadarProvenance;
+}
+
+export class UniversalRadarSession {
+  constructor(client: UniversalRadarClient, result: { site: LogicalRadarSite; binding: RadarSourceBinding; loop: RadarLoop; provenance: RadarProvenance; attempts: RadarSourceAttempt[] }, options?: UniversalRadarOpenOptions);
+  readonly client: UniversalRadarClient;
+  site: LogicalRadarSite;
+  binding: RadarSourceBinding;
+  loop: RadarLoop | null;
+  provenance: RadarProvenance;
+  attempts: RadarSourceAttempt[];
+  options: UniversalRadarOpenOptions;
+  index: number;
+  readonly length: number;
+  frame(index?: number | "latest"): RenderedFrame | null;
+  setIndex(index?: number | "latest"): RenderedFrame | null;
+  draw(canvas: HTMLCanvasElement, index?: number | "latest"): RenderedFrame;
+  textureLayer(index?: number | "latest", options?: RenderOptions): RadarTextureLayer;
+  mapbox(options: RenderOptions & { canvas: HTMLCanvasElement; index?: number | "latest"; sourceId?: string; layerId?: string; opacity?: number; fadeDuration?: number; emissiveStrength?: number; animate?: boolean }): { sourceId: string; layerId: string; radarLayer: RadarTextureLayer; source: MapboxRadarCanvasSource; layer: MapboxRadarRasterLayer };
+  setProduct(product: string, options?: UniversalRadarOpenOptions): Promise<this>;
+  setCut(cut: number, options?: UniversalRadarOpenOptions): Promise<this>;
+  poll(options?: UniversalRadarOpenOptions): Promise<UniversalRadarPollResult>;
+  snapshot(): UniversalRadarSessionSnapshot;
   destroy(): void;
 }

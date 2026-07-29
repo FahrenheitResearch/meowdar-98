@@ -1,7 +1,7 @@
 {
   "name": "@fahrenheitresearch/bowecho-radar-toolbox",
-  "version": "0.1.0",
-  "description": "Client-side BowEcho-derived Level II radar toolbox for browser UIs.",
+  "version": "0.2.0",
+  "description": "Client-side BowEcho radar SDK with logical global sites, source failover, and WASM decoding.",
   "license": "MIT OR Apache-2.0",
   "type": "module",
   "sideEffects": false,
@@ -45,10 +45,15 @@
     "worker.js",
     "sites.js",
     "examples",
+    "relay",
     "tests",
     "pkg"
   ],
   "scripts": {
-    "test": "node ./tests/sdk-contract.mjs"
+    "test": "node ./tests/sdk-contract.mjs && node ./tests/universal-contract.mjs && node ./tests/relay-contract.mjs && npm run test:types",
+    "test:types": "tsc --noEmit --skipLibCheck false --lib ES2022,DOM --module NodeNext --moduleResolution NodeNext --target ES2022 tests/universal-types.ts"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
   }
 }

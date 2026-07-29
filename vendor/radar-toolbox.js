@@ -73,6 +73,7 @@ const ORD_COUNTRIES = [
   ["be", "BE", "Belgium"],
   ["ch", "CH", "Switzerland"],
   ["ee", "EE", "Estonia"],
+  ["es", "ES", "Spain"],
   ["fr", "FR", "France"],
   ["hr", "HR", "Croatia"],
   ["ie", "IE", "Ireland"],
@@ -86,7 +87,8 @@ const ORD_COUNTRIES = [
   ["si", "SI", "Slovenia"],
 ];
 const ORD_PVOL_SITE_IDS = new Set([
-  "bejab", "bewid",
+  "behel", "bejab", "bewid",
+  "esahr", "esatn", "esbnv", "esclg", "esgld", "eslid", "esnjr", "espdg", "essft", "essse", "estjv",
   "hrbil", "hrdeb", "hrgra", "hrpun", "hrulj",
   "iedub", "iesha",
   "isbjo", "iskef", "isska",
@@ -281,6 +283,22 @@ export function createRadarSession(toolboxOrOptions = {}, options = {}) {
     ? toolboxOrOptions
     : createRadarToolbox(sessionOptions.toolboxOptions || {});
   return new RadarSession(toolbox, sessionOptions);
+}
+
+export const UNIVERSAL_RADAR_CATALOG_VERSION = "1";
+
+export function createRadarClient(options = {}) {
+  return new UniversalRadarClient(options);
+}
+
+export function logicalRadarSites(options = {}) {
+  return buildLogicalRadarCatalog(options).map(cloneLogicalRadarSite);
+}
+
+export function logicalRadarSite(siteId, options = {}) {
+  const normalized = normalizeLogicalRadarSiteId(siteId);
+  if (!normalized) return null;
+  return logicalRadarSites(options).find((site) => site.id === normalized) || null;
 }
 
 export function frameProviders() {
@@ -2064,6 +2082,8 @@ export async function recentInternationalFramePlans(providerId, siteId, countOrO
 export function internationalFrameFromPlan(planOrOptions, options = {}) {
   const plan = normalizeInternationalFramePlan(planOrOptions);
   const site = normalizeInternationalSiteDescriptor(options.site || plan.site);
+  const transformUrl = typeof options.urlTransform === "function" ? options.urlTransform : (url) => url;
+  const sourceUrls = plan.parts.map((part) => transformUrl(part.url));
   const firstPart = plan.parts[0];
   if (!firstPart?.url) throw new Error("internationalFrameFromPlan requires at least one URL part");
   const id = options.id || `${plan.providerId}-${site.id}-${plan.identity}`;
@@ -2075,8 +2095,8 @@ export function internationalFrameFromPlan(planOrOptions, options = {}) {
     provider: options.provider || plan.providerId,
     format: options.format || plan.format || "odim-h5",
     complete: true,
-    url: plan.merge ? undefined : firstPart.url,
-    urls: plan.merge ? plan.parts.map((part) => part.url) : undefined,
+    url: plan.merge ? undefined : sourceUrls[0],
+    urls: plan.merge ? sourceUrls : undefined,
     merge: Boolean(plan.merge),
     volumeTime: options.volumeTime || plan.volumeTime || volumeTimeFromInternationalIdentity(plan.identity) || null,
     site: site.id,
@@ -4682,8 +4702,9 @@ export class BowEchoRadarToolbox {
 
   async loadInternationalLoop(providerId, siteId, options = {}) {
     const frameCount = clampInt(options.frameCount ?? options.count ?? 6, 1, 200);
-    const frames = await recentInternationalFrames(providerId, siteId, frameCount, options);
+    let frames = await recentInternationalFrames(providerId, siteId, frameCount, options);
     if (!frames.length) throw new Error("loadInternationalLoop requires at least one planned frame");
+    if (options.prefetchBytes) frames = await prefetchFrameSourceBytes(frames, options.fetch, options);
     const siteDescriptor = siteDescriptorFromFrame(frames[frames.length - 1]);
     const loop = await this.loadImportedLoop(frames, {
       ...options,
@@ -4704,10 +4725,18 @@ export class BowEchoRadarToolbox {
     const mode = options.mode || "live";
     options.onProgress?.({ stage: "list", site, mode });
 
-    const frames = mode === "recent"
+    let frames = mode === "recent"
       ? await this.recentArchiveFrames(site, frameCount, options)
       : await this.livePlusArchiveFrames(site, frameCount, options);
     if (!frames.length) throw new Error(`no frames for ${site}`);
+    if (typeof options.urlTransform === "function") {
+      frames = frames.map((frame) => ({
+        ...frame,
+        url: frame.url ? options.urlTransform(frame.url) : frame.url,
+        urls: frame.urls?.map(options.urlTransform),
+      }));
+    }
+    if (options.prefetchBytes) frames = await prefetchFrameSourceBytes(frames, options.fetch, options);
 
     const metaFrame = frames[frames.length - 1];
     const meta = await this.frameMetadata(metaFrame, product);
@@ -4747,7 +4776,11 @@ export class BowEchoRadarToolbox {
 
   async pollLive(loop, options = {}) {
     const site = normalizeSite(options.site || loop.site);
-    const latest = await this.latestRealtimeFrame(site);
+    let latest = await this.latestRealtimeFrame(site);
+    if (typeof options.urlTransform === "function") {
+      latest = { ...latest, url: latest.url ? options.urlTransform(latest.url) : latest.url };
+    }
+    if (options.prefetchBytes) [latest] = await prefetchFrameSourceBytes([latest], options.fetch, options);
     const existingIndex = loop.frames.findIndex((frame) => frame.cacheKey === latest.cacheKey);
     if (existingIndex >= 0) return { status: "idle", frame: latest, loop };
 
@@ -4819,7 +4852,8 @@ export class BowEchoRadarToolbox {
     const providerId = normalizeInternationalProviderId(options.providerId || options.provider || loop?.internationalProviderId || lastFrame.internationalProviderId || lastFrame.provider);
     const siteId = options.siteId || options.internationalSiteId || loop?.internationalSite?.id || lastFrame.internationalSiteId || lastFrame.site;
     if (!providerId || !siteId) throw new Error("pollInternationalLive requires an international provider and site");
-    const latest = await latestInternationalFrame(providerId, siteId, options);
+    let latest = await latestInternationalFrame(providerId, siteId, options);
+    if (options.prefetchBytes) [latest] = await prefetchFrameSourceBytes([latest], options.fetch, options);
     const existingIndex = loop.frames.findIndex((frame) => frame.cacheKey === latest.cacheKey || frame.identity === latest.identity);
     if (existingIndex >= 0) return { status: "idle", frame: latest, loop };
 
@@ -5730,6 +5764,711 @@ export class RadarSession {
   emit() {
     const snapshot = this.snapshot();
     for (const listener of this.listeners) listener(snapshot);
+  }
+}
+
+const INTERNATIONAL_PROVIDER_COUNTRY_CODES = {
+  chmi: "CZ",
+  dmi: "DK",
+  dwd: "DE",
+  fmi: "FI",
+  geosphere: "AT",
+  jma: "JP",
+  shmu: "SK",
+  smhi: "SE",
+};
+
+const COUNTRY_NAME_CODES = {
+  austria: "AT",
+  belgium: "BE",
+  croatia: "HR",
+  czechia: "CZ",
+  denmark: "DK",
+  estonia: "EE",
+  finland: "FI",
+  france: "FR",
+  germany: "DE",
+  iceland: "IS",
+  ireland: "IE",
+  japan: "JP",
+  lithuania: "LT",
+  malta: "MT",
+  netherlands: "NL",
+  norway: "NO",
+  poland: "PL",
+  romania: "RO",
+  slovakia: "SK",
+  slovenia: "SI",
+  sweden: "SE",
+  switzerland: "CH",
+  "united states": "US",
+};
+
+function normalizeLogicalRadarSiteId(value) {
+  const raw = typeof value === "object" ? value?.id : value;
+  const text = String(raw || "").trim();
+  if (!text) return "";
+  const separator = text.indexOf(":");
+  if (separator < 0) return text.toUpperCase();
+  return `${text.slice(0, separator).toUpperCase()}:${text.slice(separator + 1).toUpperCase()}`;
+}
+
+function internationalCountryCode(site) {
+  const explicit = String(site.countryCode || "").trim().toUpperCase();
+  if (/^[A-Z]{2}$/.test(explicit)) return explicit;
+  const providerId = normalizeInternationalProviderId(site.providerId);
+  if (INTERNATIONAL_PROVIDER_COUNTRY_CODES[providerId]) return INTERNATIONAL_PROVIDER_COUNTRY_CODES[providerId];
+  if (providerId === "ord") {
+    const prefix = String(site.id || "").trim().slice(0, 2).toUpperCase();
+    if (/^[A-Z]{2}$/.test(prefix)) return prefix;
+  }
+  return COUNTRY_NAME_CODES[String(site.country || "").trim().toLowerCase()] || "XX";
+}
+
+function normalizedSourceBinding(binding, defaults = {}) {
+  const providerId = String(binding.providerId || binding.provider || defaults.providerId || "").trim().toLowerCase();
+  const providerSiteId = String(binding.providerSiteId || binding.siteId || binding.site || defaults.providerSiteId || "").trim();
+  const source = String(binding.source || defaults.source || (providerId === "nexrad-level2" ? "nexrad" : "international"));
+  const planner = String(binding.planner || defaults.planner || (source === "nexrad" ? "nexrad" : "international"));
+  const id = String(binding.id || defaults.id || `${providerId}:${providerSiteId}`).trim();
+  if (!id || !providerSiteId) throw new Error("radar source binding requires id and providerSiteId");
+  return {
+    type: "bowecho-radar-source-binding-v1",
+    id,
+    providerId,
+    providerSiteId,
+    source,
+    planner,
+    role: String(binding.role || defaults.role || "preferred"),
+    priority: Number.isFinite(Number(binding.priority ?? defaults.priority)) ? Number(binding.priority ?? defaults.priority) : 100,
+    format: binding.format || defaults.format || null,
+    access: String(binding.access || defaults.access || "direct"),
+    merge: binding.merge ?? defaults.merge ?? false,
+    siteFilteredDecode: Boolean(binding.siteFilteredDecode ?? defaults.siteFilteredDecode),
+    live: Boolean(binding.live ?? defaults.live ?? true),
+    archive: Boolean(binding.archive ?? defaults.archive ?? false),
+    attribution: binding.attribution || defaults.attribution || null,
+    fetch: typeof binding.fetch === "function" ? binding.fetch : defaults.fetch,
+    load: typeof binding.load === "function" ? binding.load : defaults.load,
+    poll: typeof binding.poll === "function" ? binding.poll : defaults.poll,
+    metadata: cloneCatalogRecord(binding.metadata || defaults.metadata || {}),
+  };
+}
+
+function cloneSourceBinding(binding) {
+  return {
+    ...binding,
+    metadata: cloneCatalogRecord(binding.metadata || {}),
+  };
+}
+
+function cloneLogicalRadarSite(site) {
+  return {
+    ...site,
+    formats: [...(site.formats || [])],
+    capabilities: { ...(site.capabilities || {}) },
+    sources: (site.sources || []).map(cloneSourceBinding),
+  };
+}
+
+function addLogicalSiteBinding(byId, descriptor, binding) {
+  let id = normalizeLogicalRadarSiteId(descriptor.id);
+  if (!id) throw new Error("logical radar site requires an id");
+  const lat = Number(descriptor.lat ?? descriptor.latitude);
+  const lon = Number(descriptor.lon ?? descriptor.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) throw new Error(`logical radar site '${id}' requires finite lat/lon`);
+  const existing = byId.get(id);
+  if (existing && haversineDistanceKm(existing.lat, existing.lon, lat, lon) > 25) {
+    id = `${id}@${String(binding.providerId || "SOURCE").toUpperCase()}`;
+  }
+  const site = byId.get(id) || {
+    type: "bowecho-logical-radar-site-v1",
+    id,
+    label: String(descriptor.label || descriptor.name || id),
+    name: String(descriptor.name || descriptor.label || id),
+    country: String(descriptor.country || "Unknown"),
+    countryCode: String(descriptor.countryCode || id.split(":", 1)[0] || "XX").toUpperCase(),
+    lat,
+    lon,
+    dataClass: "polar-volume",
+    formats: [],
+    capabilities: {
+      live: false,
+      archive: false,
+      clientSide: true,
+      failover: false,
+    },
+    sources: [],
+  };
+  if (!site.sources.some((source) => source.id === binding.id)) site.sources.push(binding);
+  if (binding.format && !site.formats.includes(binding.format)) site.formats.push(binding.format);
+  site.capabilities.live ||= binding.live;
+  site.capabilities.archive ||= binding.archive;
+  site.capabilities.failover = site.sources.length > 1;
+  site.sources.sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id));
+  site.formats.sort();
+  byId.set(id, site);
+  return site;
+}
+
+function buildLogicalRadarCatalog(options = {}) {
+  const byId = new Map();
+  if (options.includeNexrad !== false) {
+    for (const site of RADAR_SITES) {
+      const id = `US:${site.id}`;
+      addLogicalSiteBinding(byId, {
+        id,
+        label: site.name,
+        country: "United States",
+        countryCode: "US",
+        lat: site.lat,
+        lon: site.lon,
+      }, normalizedSourceBinding({
+        id: `nexrad-public:${site.id}`,
+        providerId: "nexrad-level2",
+        providerSiteId: site.id,
+        source: "nexrad",
+        planner: "nexrad",
+        role: "preferred",
+        priority: 100,
+        format: "nexrad-level2",
+        access: "either",
+        live: true,
+        archive: true,
+        attribution: "NOAA/NWS NEXRAD Level II",
+      }));
+    }
+  }
+  if (options.includeInternational !== false) {
+    for (const site of INTERNATIONAL_RADAR_SITES) {
+      const countryCode = internationalCountryCode(site);
+      const logicalId = normalizeLogicalRadarSiteId(site.logicalSiteId || `${countryCode}:${site.id}`);
+      const provider = findInternationalRadarProvider(site.providerId);
+      addLogicalSiteBinding(byId, {
+        id: logicalId,
+        label: site.label,
+        country: site.country,
+        countryCode,
+        lat: site.lat,
+        lon: site.lon,
+      }, normalizedSourceBinding({
+        id: `${site.providerId}:${site.id}`,
+        providerId: site.providerId,
+        providerSiteId: site.id,
+        source: "international",
+        planner: "international",
+        role: "preferred",
+        priority: 100,
+        format: site.format,
+        access: "either",
+        merge: site.merge,
+        siteFilteredDecode: site.siteFilteredDecode,
+        live: Boolean(provider?.capabilities?.livePolling ?? provider?.capabilities?.latestPlan),
+        archive: Boolean(provider?.capabilities?.archive),
+        attribution: provider?.label || site.providerId,
+      }));
+    }
+  }
+  for (const descriptor of options.extraSites || options.sites || []) {
+    const sources = descriptor.sources || [];
+    for (const source of sources) addLogicalSiteBinding(byId, descriptor, normalizedSourceBinding(source));
+  }
+  for (const source of options.sourceBindings || []) {
+    const logicalId = normalizeLogicalRadarSiteId(source.logicalSiteId || source.logicalId);
+    const existing = byId.get(logicalId);
+    if (!existing && !source.site) throw new Error(`source binding '${source.id || source.providerId}' references unknown logical site '${logicalId}'`);
+    const descriptor = source.site || existing;
+    addLogicalSiteBinding(byId, { ...descriptor, id: logicalId || descriptor.id }, normalizedSourceBinding(source));
+  }
+  const query = normalizeQuery(options.query);
+  const countries = normalizeStringSet(options.country || options.countries);
+  const providers = normalizeStringSet(options.providerId || options.providerIds || options.providers);
+  const dataClass = String(options.dataClass || "").trim().toLowerCase();
+  const live = options.live;
+  return [...byId.values()]
+    .filter((site) => !query || `${site.id} ${site.label} ${site.country}`.toUpperCase().includes(query))
+    .filter((site) => !countries.size || countries.has(site.countryCode) || countries.has(String(site.country).toUpperCase()))
+    .filter((site) => !providers.size || site.sources.some((source) => providers.has(String(source.providerId).toUpperCase())))
+    .filter((site) => !dataClass || site.dataClass === dataClass)
+    .filter((site) => live === undefined || site.capabilities.live === Boolean(live))
+    .sort((left, right) => left.countryCode.localeCompare(right.countryCode) || left.id.localeCompare(right.id));
+}
+
+function relayFetchFor(baseUrl, fetchImpl) {
+  if (!baseUrl) return null;
+  const fetcher = fetchImpl || globalThis.fetch?.bind(globalThis);
+  if (!fetcher) throw new Error("relay fetching requires a fetch implementation");
+  return (input, init = {}) => {
+    const upstream = typeof input === "string" || input instanceof URL ? String(input) : input?.url;
+    if (!upstream) throw new Error("relay fetch requires a URL");
+    return fetcher(relayTargetUrl(baseUrl, upstream), init);
+  };
+}
+
+function relayTargetUrl(baseUrl, upstream) {
+  const relay = new URL(String(baseUrl), globalThis.location?.href || "http://localhost/");
+  relay.searchParams.set("url", String(upstream));
+  return relay.toString();
+}
+
+async function prefetchFrameSourceBytes(frames, fetchImpl, options = {}) {
+  if (typeof fetchImpl !== "function") throw new Error("byte prefetch requires a fetch implementation");
+  const concurrency = clampInt(options.prefetchConcurrency ?? 4, 1, 8);
+  return mapLimit(frames, concurrency, async (frame) => {
+    if (frame.bytes || frame.byteParts) return frame;
+    if (frame.merge && frame.urls?.length) {
+      const byteParts = await mapLimit(frame.urls, Math.min(8, concurrency), (url) => fetchFrameBytes(url, fetchImpl, options));
+      return { ...frame, byteParts };
+    }
+    if (frame.url) return { ...frame, bytes: await fetchFrameBytes(frame.url, fetchImpl, options) };
+    return frame;
+  });
+}
+
+async function fetchFrameBytes(url, fetchImpl, options = {}) {
+  const response = await fetchImpl(url, { signal: options.signal, cache: "default" });
+  if (!response?.ok) throw new Error(`${response?.status || 0} ${response?.statusText || "fetch failed"}: ${url}`);
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+function frameTimeMillis(frame) {
+  const value = frame?.volumeTime || frame?.frame?.volumeTime;
+  const millis = value ? Date.parse(value) : NaN;
+  return Number.isFinite(millis) ? millis : null;
+}
+
+function validateUniversalLoop(loop, options = {}) {
+  const frames = Array.isArray(loop?.frames) ? loop.frames : [];
+  const renderedFrames = Array.isArray(loop?.renderedFrames) ? loop.renderedFrames : [];
+  const length = Number(loop?.length ?? renderedFrames.length ?? frames.length);
+  if (!Number.isFinite(length) || length < 1 || (!frames.length && !renderedFrames.length)) {
+    throw new Error("source returned an empty radar loop");
+  }
+  if (frames.some((frame) => frame?.complete === false)) throw new Error("source returned an incomplete radar volume");
+  const minimumFrames = clampInt(options.minimumFrames ?? 1, 1, 200);
+  if (length < minimumFrames) throw new Error(`source returned ${length} frame(s); ${minimumFrames} required`);
+  const mode = String(options.mode || "live").toLowerCase();
+  const maxAgeMinutes = options.maxAgeMinutes;
+  if (mode !== "archive" && maxAgeMinutes !== null && maxAgeMinutes !== false && Number.isFinite(Number(maxAgeMinutes))) {
+    const latest = [...frames, ...renderedFrames].map(frameTimeMillis).filter(Number.isFinite).sort((a, b) => b - a)[0];
+    if (latest !== undefined) {
+      const now = Date.parse(options.now instanceof Date ? options.now.toISOString() : String(options.now || new Date().toISOString()));
+      const ageMinutes = (now - latest) / 60_000;
+      if (Number.isFinite(now) && ageMinutes > Number(maxAgeMinutes)) {
+        throw new Error(`source latest volume is stale by ${Math.round(ageMinutes)} minutes`);
+      }
+    }
+  }
+  if (typeof options.validateLoop === "function") options.validateLoop(loop);
+  return loop;
+}
+
+function attachUniversalProvenance(loop, site, binding, transport, attempts, selectedAt) {
+  const provenance = {
+    type: "bowecho-radar-provenance-v1",
+    logicalSiteId: site.id,
+    sourceId: binding.id,
+    providerId: binding.providerId,
+    providerSiteId: binding.providerSiteId,
+    transport,
+    selectedAt,
+    attempts: attempts.map((attempt) => ({ ...attempt })),
+    catalogVersion: UNIVERSAL_RADAR_CATALOG_VERSION,
+  };
+  loop.logicalSite = cloneCatalogRecord(site);
+  loop.sourceBinding = cloneCatalogRecord(binding);
+  loop.provenance = provenance;
+  return provenance;
+}
+
+export class UniversalRadarClient {
+  constructor(options = {}) {
+    const toolbox = options.toolbox;
+    if (toolbox && typeof toolbox.loadLoop !== "function") throw new Error("createRadarClient toolbox must be BowEchoRadarToolbox-compatible");
+    this.toolbox = toolbox || createRadarToolbox(options.toolboxOptions || {});
+    this.defaultOptions = {
+      frameCount: 4,
+      product: "REF",
+      width: 768,
+      height: 768,
+      rangeKm: 230,
+      mode: "live",
+      maxAgeMinutes: 30,
+      ...options.defaults,
+    };
+    this.cooldownMs = clampInt(options.cooldownMs ?? 60_000, 0, 60 * 60_000);
+    this.customFetch = typeof options.fetch === "function";
+    this.fetch = options.fetch || globalThis.fetch?.bind(globalThis);
+    this.relayUrl = options.relayUrl || null;
+    this.relayFetch = options.relayFetch || relayFetchFor(this.relayUrl, this.fetch);
+    this.now = typeof options.now === "function" ? options.now : () => new Date();
+    this.catalog = buildLogicalRadarCatalog({
+      includeNexrad: options.includeNexrad,
+      includeInternational: options.includeInternational,
+      extraSites: options.extraSites || options.sites,
+      sourceBindings: options.sourceBindings,
+    });
+    this.catalogById = new Map(this.catalog.map((site) => [site.id, site]));
+    this.healthBySource = new Map();
+  }
+
+  sites(options = {}) {
+    const query = normalizeQuery(options.query);
+    const countries = normalizeStringSet(options.country || options.countries);
+    const providers = normalizeStringSet(options.providerId || options.providerIds || options.providers);
+    return this.catalog
+      .filter((site) => !query || `${site.id} ${site.label} ${site.country}`.toUpperCase().includes(query))
+      .filter((site) => !countries.size || countries.has(site.countryCode) || countries.has(String(site.country).toUpperCase()))
+      .filter((site) => !providers.size || site.sources.some((source) => providers.has(String(source.providerId).toUpperCase())))
+      .filter((site) => options.live === undefined || site.capabilities.live === Boolean(options.live))
+      .map(cloneLogicalRadarSite);
+  }
+
+  site(siteRef) {
+    if (siteRef && typeof siteRef === "object" && Array.isArray(siteRef.sources)) return cloneLogicalRadarSite(siteRef);
+    const id = normalizeLogicalRadarSiteId(siteRef);
+    const exact = this.catalogById.get(id);
+    if (exact) return cloneLogicalRadarSite(exact);
+    const providerNative = this.catalog.find((site) => site.sources.some((source) =>
+      source.id.toUpperCase() === String(siteRef || "").trim().toUpperCase()
+      || `${source.providerId}:${source.providerSiteId}`.toUpperCase() === String(siteRef || "").trim().toUpperCase()
+    ));
+    return providerNative ? cloneLogicalRadarSite(providerNative) : null;
+  }
+
+  resolve(siteRef, options = {}) {
+    const site = this.site(siteRef);
+    if (!site) throw new Error(`unknown logical radar site '${typeof siteRef === "object" ? siteRef?.id : siteRef}'`);
+    return {
+      type: "bowecho-radar-resolution-plan-v1",
+      site,
+      sources: this._candidateBindings(site, options).map(cloneSourceBinding),
+    };
+  }
+
+  sourceHealth(siteRef = undefined) {
+    const site = siteRef === undefined ? null : this.site(siteRef);
+    const sourceIds = site ? new Set(site.sources.map((source) => source.id)) : null;
+    return [...this.healthBySource.entries()]
+      .filter(([id]) => !sourceIds || sourceIds.has(id))
+      .map(([sourceId, health]) => ({ sourceId, ...health }));
+  }
+
+  async open(siteRef, options = {}) {
+    const site = this.site(siteRef);
+    if (!site) throw new Error(`unknown logical radar site '${typeof siteRef === "object" ? siteRef?.id : siteRef}'`);
+    const result = await this._loadSite(site, options);
+    return new UniversalRadarSession(this, result, { ...this.defaultOptions, ...options });
+  }
+
+  _candidateBindings(site, options = {}) {
+    const onlySource = String(options.sourceId || "").trim();
+    const onlyProvider = String(options.providerId || options.provider || "").trim().toLowerCase();
+    const excluded = new Set((options.excludeSourceIds || []).map(String));
+    const now = this.now().getTime();
+    let candidates = site.sources
+      .filter((source) => !onlySource || source.id === onlySource)
+      .filter((source) => !onlyProvider || source.providerId === onlyProvider)
+      .filter((source) => !excluded.has(source.id))
+      .sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id));
+    if (!options.forceProbe) {
+      const ready = candidates.filter((source) => Number(this.healthBySource.get(source.id)?.cooldownUntil || 0) <= now);
+      if (ready.length) candidates = ready;
+    }
+    return candidates;
+  }
+
+  _transports(binding, options = {}) {
+    if (options.fetch || binding.fetch) return [{ id: "custom", fetch: options.fetch || binding.fetch, prefetchBytes: true }];
+    if (binding.access === "relay-required") {
+      if (!this.relayFetch) throw new Error(`source '${binding.id}' requires a configured relay`);
+      return [{
+        id: "relay",
+        fetch: this.relayFetch,
+        urlTransform: this.relayUrl ? (url) => relayTargetUrl(this.relayUrl, url) : null,
+        prefetchBytes: !this.relayUrl,
+      }];
+    }
+    const transports = [{ id: "direct", fetch: this.fetch, prefetchBytes: this.customFetch }];
+    if (this.relayFetch && binding.access !== "direct" && options.relay !== false) transports.push({
+      id: "relay",
+      fetch: this.relayFetch,
+      urlTransform: this.relayUrl ? (url) => relayTargetUrl(this.relayUrl, url) : null,
+      prefetchBytes: !this.relayUrl,
+    });
+    return transports;
+  }
+
+  async _loadSite(site, options = {}) {
+    const settings = { ...this.defaultOptions, ...options };
+    const candidates = this._candidateBindings(site, settings);
+    if (!candidates.length) throw new Error(`logical radar site '${site.id}' has no eligible source bindings`);
+    const attempts = [];
+    for (const binding of candidates) {
+      let transports;
+      try {
+        transports = this._transports(binding, settings);
+      } catch (error) {
+        attempts.push(this._attemptFailure(binding, "unavailable", error, 0));
+        this._markFailure(binding, error);
+        continue;
+      }
+      for (const transport of transports) {
+        if (settings.signal?.aborted) throw settings.signal.reason || new DOMException("Aborted", "AbortError");
+        const started = Date.now();
+        try {
+          const loop = await this._loadBinding(binding, {
+            ...settings,
+            fetch: transport.fetch,
+            urlTransform: transport.urlTransform,
+            prefetchBytes: transport.prefetchBytes,
+          });
+          validateUniversalLoop(loop, { ...settings, now: settings.now || this.now() });
+          const selectedAt = this.now().toISOString();
+          attempts.push({ sourceId: binding.id, transport: transport.id, status: "selected", durationMs: Date.now() - started });
+          this._markSuccess(binding);
+          const provenance = attachUniversalProvenance(loop, site, binding, transport.id, attempts, selectedAt);
+          return { site: cloneLogicalRadarSite(site), binding: cloneSourceBinding(binding), loop, provenance, attempts };
+        } catch (error) {
+          attempts.push(this._attemptFailure(binding, transport.id, error, Date.now() - started));
+          this._markFailure(binding, error);
+        }
+      }
+    }
+    const error = new Error(`all radar sources failed for '${site.id}': ${attempts.map((attempt) => `${attempt.sourceId} (${attempt.error})`).join("; ")}`);
+    error.name = "RadarSourceResolutionError";
+    error.site = cloneLogicalRadarSite(site);
+    error.attempts = attempts;
+    throw error;
+  }
+
+  async _loadBinding(binding, options) {
+    if (typeof binding.load === "function") return binding.load({ binding: cloneSourceBinding(binding), options, toolbox: this.toolbox });
+    const frameCount = clampInt(options.frames ?? options.frameCount ?? 4, 1, 200);
+    if (binding.planner === "nexrad" || binding.source === "nexrad") {
+      return this.toolbox.loadLoop({ ...options, site: binding.providerSiteId, frameCount });
+    }
+    if (binding.planner === "international" || binding.source === "international") {
+      return this.toolbox.loadInternationalLoop(binding.providerId, binding.providerSiteId, { ...options, frameCount });
+    }
+    throw new Error(`source '${binding.id}' has no loader`);
+  }
+
+  async _pollBinding(binding, loop, options = {}) {
+    const settings = { ...this.defaultOptions, ...options };
+    const transports = this._transports(binding, settings);
+    let lastError = null;
+    for (const transport of transports) {
+      try {
+        const result = typeof binding.poll === "function"
+          ? await binding.poll({ binding: cloneSourceBinding(binding), loop, options: {
+            ...settings,
+            fetch: transport.fetch,
+            urlTransform: transport.urlTransform,
+            prefetchBytes: transport.prefetchBytes,
+          }, toolbox: this.toolbox })
+          : binding.planner === "nexrad" || binding.source === "nexrad"
+            ? await this.toolbox.pollLive(loop, {
+              ...settings,
+              fetch: transport.fetch,
+              urlTransform: transport.urlTransform,
+              prefetchBytes: transport.prefetchBytes,
+              site: binding.providerSiteId,
+            })
+            : await this.toolbox.pollInternationalLive(loop, {
+              ...settings,
+              fetch: transport.fetch,
+              urlTransform: transport.urlTransform,
+              prefetchBytes: transport.prefetchBytes,
+              providerId: binding.providerId,
+              siteId: binding.providerSiteId,
+            });
+        if (result.loop) validateUniversalLoop(result.loop, { ...settings, now: settings.now || this.now() });
+        this._markSuccess(binding);
+        return { ...result, transport: transport.id };
+      } catch (error) {
+        lastError = error;
+        this._markFailure(binding, error);
+      }
+    }
+    throw lastError || new Error(`poll failed for source '${binding.id}'`);
+  }
+
+  _attemptFailure(binding, transport, error, durationMs) {
+    return {
+      sourceId: binding.id,
+      transport,
+      status: "failed",
+      durationMs,
+      error: String(error?.message || error),
+    };
+  }
+
+  _markSuccess(binding) {
+    const previous = this.healthBySource.get(binding.id) || {};
+    this.healthBySource.set(binding.id, {
+      successes: Number(previous.successes || 0) + 1,
+      failures: Number(previous.failures || 0),
+      consecutiveFailures: 0,
+      lastSuccess: this.now().toISOString(),
+      lastFailure: previous.lastFailure || null,
+      lastError: null,
+      cooldownUntil: 0,
+    });
+  }
+
+  _markFailure(binding, error) {
+    const previous = this.healthBySource.get(binding.id) || {};
+    const now = this.now();
+    const consecutiveFailures = Number(previous.consecutiveFailures || 0) + 1;
+    const backoff = Math.min(this.cooldownMs * (2 ** Math.max(0, consecutiveFailures - 1)), 60 * 60_000);
+    this.healthBySource.set(binding.id, {
+      successes: Number(previous.successes || 0),
+      failures: Number(previous.failures || 0) + 1,
+      consecutiveFailures,
+      lastSuccess: previous.lastSuccess || null,
+      lastFailure: now.toISOString(),
+      lastError: String(error?.message || error),
+      cooldownUntil: now.getTime() + backoff,
+    });
+  }
+}
+
+export class UniversalRadarSession {
+  constructor(client, result, options = {}) {
+    this.client = client;
+    this.options = { ...options };
+    this.index = result.loop?.length ? result.loop.length - 1 : 0;
+    this._applyResult(result);
+  }
+
+  get length() {
+    return Number(this.loop?.length || 0);
+  }
+
+  frame(index = this.index) {
+    if (!this.loop?.length) return null;
+    return this.loop.frame(normalizeLoopIndex(index, this.loop.length, this.loop.length - 1));
+  }
+
+  setIndex(index = "latest") {
+    this.index = normalizeLoopIndex(index, this.length, this.length - 1);
+    return this.frame();
+  }
+
+  draw(canvas, index = this.index) {
+    const frame = this.frame(index);
+    if (!frame) throw new Error("UniversalRadarSession.draw requires a loaded frame");
+    drawFrameToCanvas(canvas, frame);
+    return frame;
+  }
+
+  textureLayer(index = this.index, options = {}) {
+    const frame = this.frame(index);
+    if (!frame) throw new Error("UniversalRadarSession.textureLayer requires a loaded frame");
+    return this.client.toolbox.textureLayer(frame, {
+      ...options,
+      site: options.site || this.loop.siteDescriptor || this.loop.internationalSite || this.loop.site,
+    });
+  }
+
+  mapbox(options = {}) {
+    if (!options.canvas) throw new Error("UniversalRadarSession.mapbox requires a canvas");
+    const radarLayer = this.textureLayer(options.index ?? this.index, options);
+    const sourceId = options.sourceId || `bowecho-${this.site.id.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+    const layerId = options.layerId || `${sourceId}-layer`;
+    return {
+      sourceId,
+      layerId,
+      radarLayer,
+      source: this.client.toolbox.mapboxCanvasSource(radarLayer, options.canvas, { animate: options.animate ?? true }),
+      layer: this.client.toolbox.mapboxRasterLayer(radarLayer, {
+        sourceId,
+        layerId,
+        opacity: options.opacity,
+        fadeDuration: options.fadeDuration,
+        emissiveStrength: options.emissiveStrength,
+      }),
+    };
+  }
+
+  async setProduct(product, options = {}) {
+    const loop = await this.client.toolbox.rerenderLoop(this.loop, { ...this.options, ...options, product });
+    validateUniversalLoop(loop, { ...this.options, ...options, mode: this.options.mode, maxAgeMinutes: null });
+    this.provenance = attachUniversalProvenance(loop, this.site, this.binding, this.provenance.transport, this.attempts, this.provenance.selectedAt);
+    this.loop = loop;
+    this.index = Math.min(this.index, Math.max(0, this.length - 1));
+    this.options.product = product;
+    return this;
+  }
+
+  async setCut(cut, options = {}) {
+    const loop = await this.client.toolbox.rerenderLoop(this.loop, { ...this.options, ...options, cut });
+    validateUniversalLoop(loop, { ...this.options, ...options, mode: this.options.mode, maxAgeMinutes: null });
+    this.provenance = attachUniversalProvenance(loop, this.site, this.binding, this.provenance.transport, this.attempts, this.provenance.selectedAt);
+    this.loop = loop;
+    this.index = Math.min(this.index, Math.max(0, this.length - 1));
+    this.options.cut = cut;
+    return this;
+  }
+
+  async poll(options = {}) {
+    const settings = { ...this.options, ...options };
+    try {
+      const result = await this.client._pollBinding(this.binding, this.loop, settings);
+      if (result.loop) {
+        this.provenance = attachUniversalProvenance(result.loop, this.site, this.binding, result.transport, this.attempts, this.client.now().toISOString());
+        this.loop = result.loop;
+        if (settings.followLatest !== false) this.index = Math.max(0, this.length - 1);
+      }
+      return { status: result.status, frame: result.frame, session: this, provenance: this.provenance };
+    } catch (pollError) {
+      const alternatives = this.site.sources.filter((source) => source.id !== this.binding.id);
+      if (!alternatives.length || settings.failover === false) throw pollError;
+      const result = await this.client._loadSite(this.site, {
+        ...settings,
+        excludeSourceIds: [this.binding.id],
+      });
+      const previousSourceId = this.binding.id;
+      this._applyResult(result);
+      this.index = Math.max(0, this.length - 1);
+      return {
+        status: "source-changed",
+        previousSourceId,
+        sourceId: this.binding.id,
+        frame: this.frame(),
+        session: this,
+        provenance: this.provenance,
+      };
+    }
+  }
+
+  snapshot() {
+    return {
+      type: "bowecho-universal-radar-session-v1",
+      site: cloneLogicalRadarSite(this.site),
+      source: cloneSourceBinding(this.binding),
+      provenance: cloneCatalogRecord(this.provenance),
+      length: this.length,
+      index: this.index,
+      product: this.loop?.product || this.options.product || null,
+      cut: this.loop?.cut ?? this.options.cut ?? null,
+      volumeTime: this.frame()?.frame?.volumeTime || this.frame()?.volumeTime || null,
+    };
+  }
+
+  destroy() {
+    // The client may share one bounded worker across sessions, so session teardown
+    // intentionally releases only references owned by this wrapper.
+    this.loop = null;
+  }
+
+  _applyResult(result) {
+    this.site = cloneLogicalRadarSite(result.site);
+    this.binding = cloneSourceBinding(result.binding);
+    this.loop = result.loop;
+    this.provenance = cloneCatalogRecord(result.provenance);
+    this.attempts = result.attempts.map((attempt) => ({ ...attempt }));
   }
 }
 

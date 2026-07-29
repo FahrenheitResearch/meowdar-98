@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#008080">
+  <meta name="description" content="Meowdar 98 global client-side raw polar radar viewer powered by BowEcho WebAssembly.">
+  <title>Meowdar 98 · Global Radar</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./global.css?v=meowdar98-1">
+  <script src="./config.js?v=meowdar98-1"></script>
+  <script type="module" src="./global.js?v=meowdar98-1"></script>
+</head>
+<body>
+  <main class="desktop">
+    <section class="window" aria-label="Meowdar 98 global radar workstation">
+      <header class="title-bar">
+        <div><span class="cat">🐈</span><strong>Meowdar 98</strong><span>Global Raw Polar Radar</span></div>
+        <div class="window-buttons" aria-hidden="true"><button>_</button><button>□</button><button>×</button></div>
+      </header>
+
+      <nav class="menu-bar">
+        <a href="./">NEXRAD Workstation</a>
+        <span>International</span>
+        <a href="https://github.com/FahrenheitResearch/meowdar-98">Source</a>
+      </nav>
+
+      <div class="toolbar">
+        <button id="loadButton" class="primary" type="button">Load radar</button>
+        <button id="refreshButton" type="button" disabled>Refresh source</button>
+        <button id="playButton" type="button" disabled>▶ Play</button>
+        <span class="spacer"></span>
+        <span class="chip"><i id="healthDot"></i><span id="engineStatus">BowEcho 0.2 ready</span></span>
+      </div>
+
+      <div class="workspace">
+        <aside class="controls">
+          <fieldset>
+            <legend>Logical radar</legend>
+            <label>Country<select id="countrySelect"></select></label>
+            <label>Search<input id="siteSearch" type="search" placeholder="Radar, city, or code"></label>
+            <label>Station<select id="siteSelect" size="8"></select></label>
+            <div class="site-summary"><strong id="siteCode">—</strong><span id="siteName">Choose a radar</span></div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Display</legend>
+            <label>Product<select id="productSelect"><option value="REF">Reflectivity</option><option value="VEL">Velocity</option><option value="CC">Correlation coefficient</option></select></label>
+            <label>Loop frames<select id="frameCount"><option value="1">1</option><option value="3" selected>3</option><option value="6">6</option></select></label>
+            <label>Render size<select id="renderSize"><option value="512">512 px</option><option value="768" selected>768 px</option><option value="1024">1024 px</option></select></label>
+          </fieldset>
+
+          <fieldset>
+            <legend>Selected source</legend>
+            <dl>
+              <div><dt>Provider</dt><dd id="providerValue">Not loaded</dd></div>
+              <div><dt>Transport</dt><dd id="transportValue">—</dd></div>
+              <div><dt>Native ID</dt><dd id="nativeIdValue">—</dd></div>
+              <div><dt>Volume</dt><dd id="volumeValue">—</dd></div>
+            </dl>
+            <details><summary>Resolution receipt</summary><pre id="receipt">No attempts yet.</pre></details>
+          </fieldset>
+        </aside>
+
+        <section class="display">
+          <header><span id="displayTitle">No radar loaded</span><span id="frameLabel">—</span></header>
+          <div class="canvas-wrap">
+            <canvas id="radarCanvas" width="768" height="768"></canvas>
+            <div id="emptyState"><b>BowEcho WebAssembly radar</b><span>Select any live logical radar and load it.</span></div>
+            <div id="loadingState" hidden><span class="hourglass">⌛</span><b id="loadingCopy">Resolving source…</b></div>
+          </div>
+          <div class="timeline"><input id="frameSlider" type="range" min="0" max="0" value="0" disabled><span id="timelineCopy">0 frames</span></div>
+        </section>
+      </div>
+
+      <footer class="status-bar">
+        <span id="statusLead"><b>Ready</b></span>
+        <span id="catalogCount">Loading catalog…</span>
+        <span class="grow">Raw bytes decode and render locally in your browser.</span>
+      </footer>
+    </section>
+  </main>
+</body>
+</html>

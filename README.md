@@ -1,6 +1,6 @@
-# Meowdar 95
+# Meowdar 98
 
-Meowdar 95 is a static, client-rendered professional NEXRAD workstation with a
+Meowdar 98 is a static, client-rendered professional radar workstation with a
 Windows 95-inspired interface. It is intended for weather nerds, forecasters,
 spotters, researchers, and anyone who wants live Level II radar and archives
 without operating a radar API, image server, database, or account system.
@@ -11,6 +11,13 @@ interactive map, and the default basemap uses OpenStreetMap raster tiles with no
 API key. Optional GOES GLM lightning is also decoded client-side.
 
 ## Main features
+
+- **Global raw polar radar.** `global.html` uses BowEcho's provider-independent
+  logical-site API for NEXRAD and 159 international radars, including Japan.
+  Discovery, source health, failover, provenance, Web Worker decoding, and
+  rendering all happen in the visitor's browser.
+  FMI Finland is the direct-browser default; providers without browser CORS
+  use the optional allowlisted `radarRelayUrl` setting in `config.js`.
 
 - **High-resolution full default.** Full mode renders to a 3072 × 3072
   backing canvas with native gate/bin sampling and nearest-neighbor map
@@ -196,7 +203,7 @@ Low Data keeps the same archive, QC, product, palette, and low-sweep controls at
 Meowdar can be launched from static event/catalog pages with query parameters:
 
 ```text
-https://fahrenheitresearch.github.io/meowdar-95/?site=KPAH&mode=archive&time=2021-12-11T02%3A54%3A00Z&frames=3&center=1&autoload=1&polar=1
+https://fahrenheitresearch.github.io/meowdar-98/?site=KPAH&mode=archive&time=2021-12-11T02%3A54%3A00Z&frames=3&center=1&autoload=1&polar=1
 ```
 
 Supported link parameters:

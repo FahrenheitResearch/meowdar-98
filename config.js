@@ -1,6 +1,9 @@
 // Meowdar is static and client-rendered. OpenStreetMap data is shown through
 // a configurable raster tile endpoint; switch providers here if traffic grows.
 window.MEOWDAR_CONFIG = {
+  // FMI currently supports direct browser fetches and is the no-relay demo.
+  defaultInternationalSite: "FI:FIANJ",
+  radarRelayUrl: null,
   experimentalPolarRenderer: true,
   radarSites: {
     // CAFIRE handoff: leave allowedSites as "all" for the full BowEcho catalog,

@@ -37,7 +37,7 @@ This standalone bundle is intentionally separate from the BowEcho app. The goal 
 - 204 selectable Level II radar sites, with profiler-only IDs filtered out.
 - Global source/provider catalog from the latest BowEcho toolkit tables:
   - `GLOBAL_RADAR_PROVIDERS` exposes NEXRAD, nine international provider families, and community GR2A feeds with supported formats and capability flags.
-  - `INTERNATIONAL_RADAR_SITES` exposes 147 static international radar markers from SMHI, DMI, GeoSphere, FMI, SHMU, DWD, CHMI, JMA, and EUMETNET ORD.
+  - `INTERNATIONAL_RADAR_SITES` exposes 159 static international radar markers from SMHI, DMI, GeoSphere, FMI, SHMU, DWD, CHMI, JMA, and EUMETNET ORD, including Spain's current AEMET network and Helchteren.
   - `COMMUNITY_RADAR_FEEDS` and `COMMUNITY_RADAR_MARKERS` expose 19 research feeds collapsed into 12 map markers, including the Norman Testbed cluster.
   - `globalRadarSites`, `globalRadarSitesGeoJson`, `mapboxGlobalRadarSiteSource`, `deckGlobalRadarSiteScatterplotLayerProps`, `nearestRadarSite`, and `radarSiteSourceSummary` provide all-source map and picker helpers.
   - `examples/global-source-catalog.html` shows a dependency-free all-source marker catalog UI.
