@@ -113,6 +113,9 @@ import {
   nearestRadarSite,
   nexradArchiveDatePrefix,
   nexradArchiveListingUrl,
+  nexradRealtimeListingUrl,
+  nexradRealtimeSiteIds,
+  parseNexradRealtimeSiteIds,
   parseFmiVolumeListing,
   parseGeosphereVolumeListing,
   parseNexradArchiveListing,
@@ -2238,6 +2241,18 @@ assert.equal(toolbox.s3StyleListingUrl("https://bucket.example", { prefix: "a/b/
 assert.equal(toolbox.parseS3StyleListing(fmiTodayListing).keys.length, 4);
 assert.equal(toolbox.nexradArchiveDatePrefix("ktlx", "2026-06-12"), "2026/06/12/KTLX/");
 assert.equal(toolbox.parseNexradArchiveListing("KTLX", "2026-06-12", nexradArchiveXml).length, 3);
+const nexradRealtimeXml = `<?xml version="1.0" encoding="UTF-8"?>
+<ListBucketResult>
+  <CommonPrefixes><Prefix>KTLX/</Prefix></CommonPrefixes>
+  <CommonPrefixes><Prefix>TATL/</Prefix></CommonPrefixes>
+  <CommonPrefixes><Prefix>RKSG/</Prefix></CommonPrefixes>
+  <CommonPrefixes><Prefix>FOP1/</Prefix></CommonPrefixes>
+</ListBucketResult>`;
+assert.ok(nexradRealtimeListingUrl().includes("delimiter=%2F"));
+assert.deepEqual(parseNexradRealtimeSiteIds(nexradRealtimeXml), ["KTLX", "RKSG", "TATL"]);
+assert.deepEqual(await nexradRealtimeSiteIds({
+  fetch: async () => ({ ok: true, status: 200, statusText: "OK", text: async () => nexradRealtimeXml }),
+}), ["KTLX", "RKSG", "TATL"]);
 assert.equal(toolbox.archiveFrameWindow(nexradFrames, { index: 1, frameCount: 2 }).selectedFrame.id, "KTLX20260612_063000_V06");
 const nexradArchiveFetch = async (url) => {
   assert.ok(String(url).includes("prefix=2026%2F06%2F12%2FKTLX%2F"));
@@ -2266,6 +2281,42 @@ assert.equal(loadedArchiveLoop.mode, "archive");
 assert.equal(loadedArchiveLoop.source, "archive");
 assert.equal(loadedArchiveLoop.length, 2);
 assert.equal(loadedArchiveLoop.archiveWindow.selectedFrame.id, "KTLX20260612_063500_V06");
+const nexradIncompleteFallbackToolbox = createRadarToolbox({ workerClient: fakeWorker });
+nexradIncompleteFallbackToolbox.latestRealtimeFrame = async () => ({
+  id: "KTLX-live-in-progress",
+  cacheKey: "live:KTLX:442:17:1",
+  complete: false,
+  source: "live",
+  volumeTime: "2026-06-12T06:40:00Z",
+});
+nexradIncompleteFallbackToolbox.recentArchiveFrames = async () => [nexradFrames[2]];
+const nexradFallbackFrames = await nexradIncompleteFallbackToolbox.livePlusArchiveFrames("KTLX", 1);
+assert.deepEqual(nexradFallbackFrames.map((frame) => frame.id), ["KTLX20260612_063500_V06"]);
+const nexradStableLoop = { site: "KTLX", frames: [nexradFrames[2]], renderedFrames: [{}], length: 1 };
+const nexradIncompletePoll = await nexradIncompleteFallbackToolbox.pollLive(nexradStableLoop);
+assert.equal(nexradIncompletePoll.status, "idle");
+assert.equal(nexradIncompletePoll.loop, nexradStableLoop);
+const productFallbackToolbox = createRadarToolbox({ workerClient: fakeWorker });
+productFallbackToolbox.frameMetadata = async (_frame, product) => ({
+  site: "IEDUB",
+  product,
+  cuts: [{ index: 0, moments: ["VEL"], elevationDeg: 0.5, radials: 360 }],
+  displayableCuts: product === "VEL" ? [0] : [],
+  selectedCut: product === "VEL" ? 0 : null,
+});
+productFallbackToolbox.renderFrames = async (frames, options) => frames.map((frame) => ({
+  frame,
+  rgba: new Uint8Array(4),
+  width: 1,
+  height: 1,
+  renderOptions: options,
+}));
+const productFallbackLoop = await productFallbackToolbox.loadImportedLoop([nexradFrames[2]], {
+  site: "IEDUB",
+  product: "REF",
+  fallbackProducts: ["VEL", "CC"],
+});
+assert.equal(productFallbackLoop.product, "VEL");
 assert.equal(toolbox.spcConvectiveDate("2026-06-13T03:30:00Z"), "2026-06-12");
 assert.equal(toolbox.parseSpcReportsCombined("2026-06-12", spcCombinedReports).length, 3);
 assert.equal(toolbox.parseSpcTornadoSegments("2011-04-27", wcmTornCsv)[0].efLabel, "EF4");

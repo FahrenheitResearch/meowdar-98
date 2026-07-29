@@ -1,4 +1,4 @@
-import { createRadarClient } from "./vendor/radar-toolbox.js?v=meowdar98-universal1";
+import { createRadarClient } from "./vendor/radar-toolbox.js?v=meowdar98-universal3";
 
 const config = window.MEOWDAR_CONFIG || {};
 const ui = Object.fromEntries([
@@ -14,9 +14,9 @@ const radarLayerId = `${radarSourceId}-layer`;
 
 const client = createRadarClient({
   relayUrl: config.radarRelayUrl || undefined,
-  defaults: { frames: 3, product: "REF", width: 768, height: 768, rangeKm: 230 },
+  defaults: { frames: 3, product: "REF", fallbackProducts: ["VEL", "CC"], width: 768, height: 768, rangeKm: 230 },
 });
-const sites = client.sites({ live: true });
+let sites = client.sites({ live: true });
 let visibleSites = [];
 let session = null;
 let playTimer = null;
@@ -28,14 +28,21 @@ const sitePills = new Map();
 
 window.__MEOWDAR98_GLOBAL__ = {
   client,
-  sites,
+  get sites() { return sites; },
   get session() { return session; },
   get map() { return map; },
 };
 
 initialize();
 
-function initialize() {
+async function initialize() {
+  try {
+    const realtimeNexrad = new Set(await client.toolbox.nexradRealtimeSiteIds({ timeoutMs: 8000 }));
+    sites = sites.filter((site) => site.sources.some((source) => source.source !== "nexrad"
+      || realtimeNexrad.has(source.providerSiteId)));
+  } catch (error) {
+    console.info("Realtime NEXRAD inventory unavailable; retaining the capability catalog", error);
+  }
   initializeMap();
   const countries = [...new Map(sites.map((site) => [site.countryCode, site.country])).entries()]
     .sort((left, right) => left[1].localeCompare(right[1]));
@@ -52,12 +59,21 @@ function initialize() {
   for (const control of [ui.productSelect, ui.frameCount, ui.renderSize]) {
     control.addEventListener("change", () => { if (session) loadSelectedRadar(); });
   }
-  const requested = new URLSearchParams(location.search).get("site") || config.defaultInternationalSite || "FI:FIANJ";
-  const initial = client.site(requested) || client.site("FI:FIANJ") || sites[0];
+  const queryParams = new URLSearchParams(location.search);
+  const requestedFromUrl = queryParams.get("site");
+  const requested = requestedFromUrl || config.defaultInternationalSite || "FI:FIANJ";
+  const requestedSite = client.site(requested);
+  const liveRequestedSite = sites.find((site) => site.id === requestedSite?.id);
+  const initial = liveRequestedSite || sites.find((site) => site.id === "FI:FIANJ") || sites[0];
   ui.countrySelect.value = initial?.countryCode || "";
   refreshSiteList(initial?.id);
   createSitePills();
-  if (new URLSearchParams(location.search).get("autoload") === "1") loadSelectedRadar();
+  if (requestedFromUrl && !liveRequestedSite) {
+    const label = requestedSite?.id || requestedFromUrl;
+    showError(new Error(`${label} is not currently publishing in the realtime inventory. Choose another live radar; archive coverage remains available.`));
+  } else if (queryParams.get("autoload") === "1") {
+    loadSelectedRadar();
+  }
 }
 
 function refreshSiteList(preferredId = "") {
@@ -86,7 +102,10 @@ function createSitePills() {
     if (!Number.isFinite(Number(site.lon)) || !Number.isFinite(Number(site.lat))) continue;
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "site-pill";
+    // Keep markers out of the hit-test stack until MapLibre has projected
+    // them. Otherwise every unpositioned button overlaps at the origin and a
+    // click can select whichever catalog entry was appended last.
+    button.className = "site-pill offscreen";
     button.dataset.site = site.id;
     button.setAttribute("aria-label", `Select ${site.id}, ${site.label}`);
     button.title = `${site.id} · ${site.label} · ${site.country}`;
@@ -134,15 +153,13 @@ function updateSitePillPositions() {
   if (!rect.width || !rect.height) return;
   const zoom = Number(map.getZoom());
   const detail = zoom >= 7;
-  const overview = zoom < 4.2;
-  const selected = ui.siteSelect.value;
   ui.siteMarkerLayer.classList.toggle("detail", detail);
   sitePills.forEach((button, siteId) => {
     const site = client.site(siteId);
     const point = map.project([site.lon, site.lat]);
     const margin = 70;
     const offscreen = point.x < -margin || point.y < -margin || point.x > rect.width + margin || point.y > rect.height + margin;
-    button.classList.toggle("offscreen", offscreen || (overview && siteId !== selected));
+    button.classList.toggle("offscreen", offscreen);
     button.style.left = `${point.x}px`;
     button.style.top = `${point.y}px`;
   });
@@ -155,6 +172,7 @@ async function loadSelectedRadar() {
   setBusy(true, `Resolving ${site.id}…`);
   try {
     session?.destroy();
+    session = null;
     const size = Number(ui.renderSize.value);
     session = await client.open(site.id, {
       frames: Number(ui.frameCount.value),
@@ -165,6 +183,7 @@ async function loadSelectedRadar() {
       minimumFrames: 1,
       maxAgeMinutes: 60,
     });
+    ui.productSelect.value = session.snapshot().product;
     configureTimeline();
     drawFrame(session.length - 1, { fit: true });
     renderReceipt();
@@ -385,6 +404,10 @@ function showError(error) {
   ui.healthDot.className = "bad";
   ui.engineStatus.textContent = "Source failed";
   ui.statusLead.innerHTML = "<b>Load failed</b>";
+  ui.providerValue.textContent = "Not loaded";
+  ui.transportValue.textContent = "—";
+  ui.nativeIdValue.textContent = "—";
+  ui.volumeValue.textContent = "—";
   ui.receipt.textContent = JSON.stringify({ error: String(error?.message || error), attempts: error?.attempts || [] }, null, 2);
   ui.emptyState.hidden = false;
   ui.emptyState.innerHTML = `<b>Could not load this source</b><span>${escapeHtml(String(error?.message || error))}</span>`;

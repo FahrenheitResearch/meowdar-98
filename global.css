@@ -57,6 +57,7 @@ pre { max-height:170px; margin:6px 0 0; padding:6px; overflow:auto; white-space:
 .maplibregl-ctrl-group button { min-height:0; border:0; border-radius:0; }
 .maplibregl-ctrl-attrib { color:#000; }
 #emptyState,#loadingState { position:absolute; inset:0; z-index:4; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px; text-align:center; color:#fff; background:rgba(2,6,8,.82); }
+#emptyState { z-index:2; pointer-events:none; background:rgba(2,6,8,.50); }
 #emptyState[hidden],#loadingState[hidden] { display:none; }
 .hourglass { font-size:30px; animation:flip 1s steps(2,end) infinite; }
 @keyframes flip { 50% { transform:rotate(180deg); } }

@@ -1,6 +1,6 @@
-import init, { decode_jma_tar_station, decode_level2, decode_supported_volume, decode_supported_volume_parts, supported_volume_format } from "./pkg/bowecho_client_wasm.js?v=2026-06-23-native-ppi2";
+import init, { decode_jma_tar_station, decode_level2, decode_supported_volume, decode_supported_volume_parts, supported_volume_format } from "./pkg/bowecho_client_wasm.js?v=2026-07-29-hdf5v2";
 
-const ready = init(new URL("./pkg/bowecho_client_wasm_bg.wasm?v=2026-06-23-native-ppi2", import.meta.url));
+const ready = init(new URL("./pkg/bowecho_client_wasm_bg.wasm?v=2026-07-29-hdf5v2", import.meta.url));
 const byteCache = new Map();
 const volumeCache = new Map();
 const metaCache = new Map();
