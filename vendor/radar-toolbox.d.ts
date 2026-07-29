@@ -299,6 +299,7 @@ export interface UniversalRadarOpenOptions extends Omit<RenderOptions, "site">, 
   followLatest?: boolean;
   minimumFrames?: number;
   maxAgeMinutes?: number | null | false;
+  fallbackProducts?: string[];
   validateLoop?: (loop: RadarLoop) => void;
   signal?: AbortSignal;
 }
@@ -1264,6 +1265,7 @@ export interface RenderOptions {
   site?: string | RadarSite;
   mode?: "live" | "recent" | string;
   product?: string;
+  fallbackProducts?: string[];
   cut?: number;
   frameCount?: number;
   width?: number;
@@ -2701,6 +2703,9 @@ export function smhiFramePlansFromCatalog(siteId: string, textOrJson: string | R
 export function smhiFramePlanFromCatalog(siteId: string, textOrJson: string | Record<string, unknown>, options?: InternationalFetchOptions): InternationalFramePlan;
 export function s3StyleListingUrl(baseUrl: string, options?: InternationalFetchOptions): string;
 export function parseS3StyleListing(textOrListing: string | Partial<S3StyleListing> | { contents?: Array<Partial<S3StyleListingContent>>; keys?: string[]; prefixes?: string[]; commonPrefixes?: string[]; isTruncated?: boolean; nextContinuationToken?: string | null }): S3StyleListing;
+export function nexradRealtimeListingUrl(options?: InternationalFetchOptions): string;
+export function parseNexradRealtimeSiteIds(textOrListing: string | Partial<S3StyleListing>, options?: { sites?: Array<RadarSite | string> }): string[];
+export function nexradRealtimeSiteIds(options?: InternationalFetchOptions & { sites?: Array<RadarSite | string> }): Promise<string[]>;
 export function nexradArchiveDatePrefix(siteId: string, dateOrString?: string | Date | NexradArchiveDateParts): string;
 export function nexradArchiveListingUrl(siteId: string, dateOrString?: string | Date | NexradArchiveDateParts, options?: InternationalFetchOptions): string;
 export function parseNexradArchiveListing(siteId: string, dateOrString: string | Date | NexradArchiveDateParts, textOrListing: string | Partial<S3StyleListing>, options?: InternationalFetchOptions): FrameDescriptor[];
@@ -2957,6 +2962,9 @@ export class BowEchoRadarToolbox {
   dmiFramePlanFromItems(siteId: string, textOrJson: string | Record<string, unknown>, options?: InternationalFetchOptions): InternationalFramePlan;
   s3StyleListingUrl(baseUrl: string, options?: InternationalFetchOptions): string;
   parseS3StyleListing(textOrListing: string | Partial<S3StyleListing>): S3StyleListing;
+  nexradRealtimeListingUrl(options?: InternationalFetchOptions): string;
+  parseNexradRealtimeSiteIds(textOrListing: string | Partial<S3StyleListing>, options?: { sites?: Array<RadarSite | string> }): string[];
+  nexradRealtimeSiteIds(options?: InternationalFetchOptions & { sites?: Array<RadarSite | string> }): Promise<string[]>;
   nexradArchiveDatePrefix(siteId: string, dateOrString?: string | Date | NexradArchiveDateParts): string;
   nexradArchiveListingUrl(siteId: string, dateOrString?: string | Date | NexradArchiveDateParts, options?: InternationalFetchOptions): string;
   parseNexradArchiveListing(siteId: string, dateOrString: string | Date | NexradArchiveDateParts, textOrListing: string | Partial<S3StyleListing>, options?: InternationalFetchOptions): FrameDescriptor[];
