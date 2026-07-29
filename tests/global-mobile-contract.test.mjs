@@ -12,6 +12,11 @@ assert.match(script, /ui\.renderSize\.value = "512"/, "mobile defaults to a boun
 assert.match(script, /compactMobile && sourceChanged[^\n]+clearCache/, "mobile clears prior-station worker state on source changes");
 assert.match(script, /session\.syncMapLibre\(map,[\s\S]+fitOptions/, "global app dogfoods the bounded SDK MapLibre refresh helper");
 assert.doesNotMatch(script, /animate:\s*true/, "global radar canvas does not keep MapLibre repainting while idle");
+assert.doesNotMatch(
+  script,
+  /raster-resampling["']?\s*,\s*["']nearest["']/,
+  "MapLibre 5.24 nearest-neighbor sampling must not reintroduce an opaque black radar footprint",
+);
 assert.match(script, /client\.configureCache\(/, "mobile cache limits use the universal client facade");
 assert.match(script, /client\.clearCache\(/, "mobile source changes clear cache through the universal client facade");
 assert.match(script, /ui\.productSelect\.addEventListener\("change", \(\) => \{ if \(session\) rerenderProduct\(\); \}\)/, "product changes rerender the loaded volume instead of downloading it again");

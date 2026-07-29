@@ -607,7 +607,8 @@ function mountRadarMap(index, options = {}) {
     fit: Boolean(options.fit),
     fitOptions: { padding: 36, duration: 650, maxZoom: 8 },
   });
-  map.setPaintProperty?.(radarLayerId, "raster-resampling", "nearest");
+  // Keep MapLibre's default linear filter. Its 5.24 nearest path selects an
+  // unavailable mipmap for 512/1024 canvas textures and samples a black quad.
   return specs;
 }
 
