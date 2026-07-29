@@ -1,0 +1,10 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "meowdar-98-radar-relay",
+  "main": "vendor/relay/cloudflare-worker.mjs",
+  "compatibility_date": "2026-07-29",
+  "workers_dev": true,
+  "vars": {
+    "ALLOWED_ORIGINS": "https://fahrenheitresearch.github.io,http://127.0.0.1:8766"
+  }
+}
