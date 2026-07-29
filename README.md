@@ -16,8 +16,9 @@ API key. Optional GOES GLM lightning is also decoded client-side.
   logical-site API for NEXRAD and 159 international radars, including Japan.
   Discovery, source health, failover, provenance, Web Worker decoding, and
   rendering all happen in the visitor's browser.
-  FMI Finland is the direct-browser default; providers without browser CORS
-  use the optional allowlisted `radarRelayUrl` setting in `config.js`.
+  Direct-capable providers are fetched from the browser. Providers without
+  browser CORS use the deployed, allowlisted, byte-preserving `radarRelayUrl`
+  transport in `config.js`; decoding and rendering remain client-side.
 
 - **High-resolution full default.** Full mode renders to a 3072 × 3072
   backing canvas with native gate/bin sampling and nearest-neighbor map
@@ -54,9 +55,10 @@ API key. Optional GOES GLM lightning is also decoded client-side.
 - **OpenStreetMap station map.** Zoom, pan, click radar-site pills, jump to the
   nearest site, return to the selected radar, or fit the network. No map token
   is required.
-- **Static deployment.** Ordinary hosting serves HTML, CSS, JavaScript, Web
-  Workers, and WebAssembly. Radar, GLM, and map bytes go directly from their
-  upstream providers to the browser.
+- **Static application deployment.** GitHub Pages serves HTML, CSS, JavaScript,
+  Web Workers, and WebAssembly. Radar bytes use direct upstream access when
+  permitted and an allowlisted transport relay otherwise; GLM and map bytes
+  remain direct.
 
 ## Install
 
