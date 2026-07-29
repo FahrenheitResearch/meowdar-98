@@ -114,7 +114,7 @@ async function fetchAllowedUpstream(upstream, init, env) {
         || ([301, 302].includes(response.status) && currentInit.method === "POST")) {
       const headers = new Headers(currentInit.headers);
       headers.delete("content-type");
-      currentInit = { method: "GET", headers };
+      currentInit = { ...currentInit, method: "GET", headers, body: undefined };
     }
   }
   throw new Error("Upstream redirect limit exceeded");
@@ -163,6 +163,7 @@ export default {
       return textResponse(error.message, status, origin);
     }
 
+    const isRangeRequest = request.headers.has("range");
     let requestBody;
     if (request.method === "POST") {
       if (!POST_ALLOWED_HOSTS.has(upstream.hostname.toLowerCase())) {
@@ -202,24 +203,27 @@ export default {
       headers: requestHeaders,
       body: requestBody,
       redirect: "follow",
+      cache: isRangeRequest ? "no-store" : undefined,
     });
 
     const cache = caches.default;
+    const canUseCache = request.method === "GET" && !isRangeRequest;
     const cacheKeyUrl = new URL(request.url);
     cacheKeyUrl.searchParams.set("__bowecho_cache", EDGE_CACHE_VERSION);
     const cacheKey = new Request(cacheKeyUrl, { method: request.method, headers: requestHeaders });
-    let response = request.method === "GET" ? await cache.match(cacheKey) : null;
+    let response = canUseCache ? await cache.match(cacheKey) : null;
     if (!response) {
       try {
         response = await fetchAllowedUpstream(upstream, {
           method: upstreamRequest.method,
           headers: upstreamRequest.headers,
           body: requestBody,
+          cache: isRangeRequest ? "no-store" : undefined,
         }, env);
       } catch (error) {
         return textResponse(`Upstream fetch rejected: ${error.message || error}`, 502, origin);
       }
-      if (request.method === "GET" && response.ok && !request.headers.has("range")) {
+      if (canUseCache && response.ok) {
         const cacheResponse = response.clone();
         const cacheHeaders = new Headers(cacheResponse.headers);
         cacheHeaders.set("cache-control", EDGE_CACHE_CONTROL);
@@ -236,7 +240,7 @@ export default {
       const value = response.headers.get(name);
       if (value) headers.set(name, value);
     }
-    headers.set("cache-control", request.method === "GET" ? EDGE_CACHE_CONTROL : "no-store");
+    headers.set("cache-control", request.method === "GET" && !isRangeRequest ? EDGE_CACHE_CONTROL : "no-store");
     headers.set("x-bowecho-upstream", upstream.hostname);
     headers.set("x-content-type-options", "nosniff");
     return new Response(request.method === "HEAD" ? null : response.body, {

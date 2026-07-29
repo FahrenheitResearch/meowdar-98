@@ -127,7 +127,7 @@ const preprocessingRelaySession = await preprocessingRelayClient.open("AU:2", { 
 assert.equal(preprocessingOptions.prefetchBytes, true);
 assert.equal(preprocessingOptions.urlTransform, null);
 assert.deepEqual(preprocessingRelayRequests, [[
-  "https://relay.example/?url=https%3A%2F%2Fthredds.nci.example%2Fdaily.zip",
+  "https://relay.example/?url=https%3A%2F%2Fthredds.nci.example%2Fdaily.zip&__bowecho_range=bytes%3D0-0",
   "bytes=0-0",
 ]]);
 assert.equal(preprocessingRelaySession.provenance.transport, "relay");
