@@ -2266,6 +2266,21 @@ assert.equal(loadedArchiveLoop.mode, "archive");
 assert.equal(loadedArchiveLoop.source, "archive");
 assert.equal(loadedArchiveLoop.length, 2);
 assert.equal(loadedArchiveLoop.archiveWindow.selectedFrame.id, "KTLX20260612_063500_V06");
+const nexradIncompleteFallbackToolbox = createRadarToolbox({ workerClient: fakeWorker });
+nexradIncompleteFallbackToolbox.latestRealtimeFrame = async () => ({
+  id: "KTLX-live-in-progress",
+  cacheKey: "live:KTLX:442:17:1",
+  complete: false,
+  source: "live",
+  volumeTime: "2026-06-12T06:40:00Z",
+});
+nexradIncompleteFallbackToolbox.recentArchiveFrames = async () => [nexradFrames[2]];
+const nexradFallbackFrames = await nexradIncompleteFallbackToolbox.livePlusArchiveFrames("KTLX", 1);
+assert.deepEqual(nexradFallbackFrames.map((frame) => frame.id), ["KTLX20260612_063500_V06"]);
+const nexradStableLoop = { site: "KTLX", frames: [nexradFrames[2]], renderedFrames: [{}], length: 1 };
+const nexradIncompletePoll = await nexradIncompleteFallbackToolbox.pollLive(nexradStableLoop);
+assert.equal(nexradIncompletePoll.status, "idle");
+assert.equal(nexradIncompletePoll.loop, nexradStableLoop);
 assert.equal(toolbox.spcConvectiveDate("2026-06-13T03:30:00Z"), "2026-06-12");
 assert.equal(toolbox.parseSpcReportsCombined("2026-06-12", spcCombinedReports).length, 3);
 assert.equal(toolbox.parseSpcTornadoSegments("2011-04-27", wcmTornCsv)[0].efLabel, "EF4");
