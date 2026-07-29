@@ -755,8 +755,12 @@ async function getByteParts(frame) {
     const cached = byteCache.get(cacheKey);
     if (Array.isArray(cached)) return cached.map((part) => new Uint8Array(part));
   }
-  if (!frame.urls?.length) throw new Error(`no part URLs for merged frame ${cacheKey}`);
-  const parts = await mapLimit(frame.urls, 8, async (url) => new Uint8Array(await fetchArrayBuffer(url)));
+  const parts = frame.byteParts?.length
+    ? frame.byteParts.map(normalizeBytes)
+    : frame.urls?.length
+      ? await mapLimit(frame.urls, 8, async (url) => new Uint8Array(await fetchArrayBuffer(url)))
+      : null;
+  if (!parts?.length) throw new Error(`no byte parts or part URLs for merged frame ${cacheKey}`);
   byteCache.set(cacheKey, parts.map((part) => new Uint8Array(part)));
   trimCache(byteCache, undefined, cacheLimits.bytes);
   return parts;

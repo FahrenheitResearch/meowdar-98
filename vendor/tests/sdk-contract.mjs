@@ -301,7 +301,7 @@ assert.ok(frameProviders().find((provider) => provider.id === "international-fmi
 assert.equal(supportedByteFormats().find((format) => format.id === "nexrad-level2").kind, "volume");
 assert.equal(supportedArchiveFormats().find((format) => format.id === "mobile-archive-zip").kind, "archive");
 assert.equal(GLOBAL_RADAR_PROVIDERS.length, 11);
-assert.equal(INTERNATIONAL_RADAR_SITES.length, 147);
+assert.equal(INTERNATIONAL_RADAR_SITES.length, 159);
 assert.equal(COMMUNITY_RADAR_FEEDS.length, 19);
 assert.equal(COMMUNITY_RADAR_MARKERS.length, 12);
 assert.equal(radarSourceCatalog({ query: "JMA" })[0].id, "jma");
@@ -454,7 +454,7 @@ assert.equal(customGlobalSites[0].source, "custom");
 assert.equal(nearestRadarSite({ lon: -87.325, lat: 35.254 }, { source: "custom", customPollLinks: customGisLinks, maxDistanceKm: 1 }).id, "fwlx");
 const globalSummary = radarSiteSourceSummary();
 assert.equal(globalSummary.sources.nexrad, 204);
-assert.equal(globalSummary.sources.international, 147);
+assert.equal(globalSummary.sources.international, 159);
 assert.equal(globalSummary.sources.community, 12);
 const globalGeo = globalRadarSitesGeoJson({ sources: ["international", "community"], query: "Japan" });
 assert.equal(globalGeo.type, "FeatureCollection");

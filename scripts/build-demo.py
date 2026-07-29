@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the self-contained Meowdar 95 interactive visual preview."""
+"""Build the self-contained Meowdar 98 interactive visual preview."""
 from pathlib import Path
 import re
 
@@ -38,31 +38,31 @@ def main() -> None:
 
     html = re.sub(r'^[ \t]*<link rel="preconnect"[^>]*>[ \t]*\n?', "", html, flags=re.MULTILINE)
     html = re.sub(
-        r'^[ \t]*<link rel="stylesheet" href="\./styles\.css">[ \t]*$',
+        r'^[ \t]*<link rel="stylesheet" href="\./styles\.css(?:\?[^\"]*)?">[ \t]*$',
         lambda _: f"  <style>\n{css}\n  </style>",
         html,
         count=1,
         flags=re.MULTILINE,
     )
     html = re.sub(
-        r'^[ \t]*<script src="\./config\.js"></script>[ \t]*$',
+        r'^[ \t]*<script src="\./config\.js(?:\?[^\"]*)?"></script>[ \t]*$',
         lambda _: f"  <script>\n{config}\nwindow.__MEOWDAR_STATIC_PREVIEW__ = true;\n  </script>",
         html,
         count=1,
         flags=re.MULTILINE,
     )
     html = re.sub(
-        r'^[ \t]*<script type="module" src="\./app\.js"></script>[ \t]*$',
+        r'^[ \t]*<script type="module" src="\./app\.js(?:\?[^\"]*)?"></script>[ \t]*$',
         lambda _: f"  <script>\nwindow.addEventListener(\"DOMContentLoaded\", () => {{\n{bundle}\n}});\n  </script>",
         html,
         count=1,
         flags=re.MULTILINE,
     )
     html = html.replace(
-        'content="Meowdar is a client-rendered professional NEXRAD radar workstation with live low-sweep following, archives, palettes, and optional GLM lightning."',
-        'content="Interactive offline preview of Meowdar 95, a professional client-rendered radar workstation."',
+        'content="Meowdar 98 is a client-rendered global radar workstation with NEXRAD, international raw polar radar, archives, palettes, and optional GLM lightning."',
+        'content="Interactive offline preview of Meowdar 98, a professional client-rendered radar workstation."',
     )
-    html = html.replace("<title>Meowdar 95</title>", "<title>Meowdar 95 · Interactive Preview</title>")
+    html = html.replace("<title>Meowdar 98</title>", "<title>Meowdar 98 · Interactive Preview</title>")
     output = ROOT / "demo.html"
     output.write_text(html, encoding="utf-8")
     print(f"Wrote {output} ({len(html):,} bytes)")

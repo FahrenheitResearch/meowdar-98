@@ -4,6 +4,57 @@ Client-side radar toolkit for building fast browser radar apps from BowEcho-deri
 
 The package exposes a typed JavaScript API, a Web Worker, and a WASM decoder/renderer bundle. Public Level II, community GR2A, and supported international radar feeds are fetched by the end user's browser, decoded in the worker, cached locally, and rendered without server-side radar processing.
 
+## Universal Site API
+
+Version 0.2 adds a provider-independent API above the original provider-specific toolbox. Applications choose one logical physical radar; BowEcho ranks its source bindings, rejects stale or incomplete loops, retries an optional relay, fails over to another upstream, and records the selected source and every failed attempt.
+
+```js
+import { createRadarClient } from "./radar-toolbox.js";
+
+const radar = createRadarClient({
+  // Optional. Direct browser access remains preferred where CORS works.
+  relayUrl: "https://radar-relay.example/radar",
+});
+
+const internationalSites = radar.sites({ live: true })
+  .filter((site) => site.countryCode !== "US");
+
+const session = await radar.open("DE:ASB", {
+  frames: 6,
+  product: "REF",
+  width: 768,
+  height: 768,
+});
+
+session.draw(canvas);
+console.log(session.snapshot().provenance);
+
+const mapbox = session.mapbox({ canvas, opacity: 0.86 });
+map.addSource(mapbox.sourceId, mapbox.source);
+map.addLayer(mapbox.layer);
+```
+
+Logical IDs are country-prefixed (`US:KTLX`, `DE:ASB`, `JP:ITOK`, `DK:06177`). `radar.site()` also accepts existing `provider:site` references for migration. Existing calls such as `toolbox.loadInternationalLoop("dwd", "asb", options)` are unchanged.
+
+Additional native, mirror, archive, or application-owned bindings can be attached without changing the UI:
+
+```js
+const radar = createRadarClient({
+  sourceBindings: [{
+    logicalSiteId: "DE:ASB",
+    id: "my-mirror:asb",
+    providerId: "my-mirror",
+    providerSiteId: "asb",
+    role: "fallback",
+    priority: 200,
+    access: "relay-required",
+    load: ({ options, toolbox }) => toolbox.loadInternationalLoop("dwd", "asb", options),
+  }],
+});
+```
+
+See `examples/universal-international-radar.html` for a dependency-free site picker and `relay/` for the allowlisted, byte-preserving Cloudflare Worker fallback.
+
 ## Install Shape
 
 This initial release is packaged as a static browser SDK. Import from `radar-toolbox.js` in a browser app or serve this directory directly while prototyping.
@@ -60,6 +111,7 @@ const customFeed = toolbox.customPollLinkFeed(customLinks[0]);
 - Browser imports for NEXRAD Level II, ODIM_H5, CfRadial 1.x classic netCDF, DORADE sweep, JMA polar radar GRIB2 tar byte buffers, and mobile/research radar ZIP archives.
 - Community GR2A `dir.list` feed planning and polling, plus saved custom poll-link normalization, map markers, and GR GIS import helpers.
 - Browser-plannable international feeds for SMHI, GeoSphere, SHMU, DWD, CHMI, JMA, EUMETNET ORD, DMI, and FMI.
+- Logical global radar IDs, extensible source bindings, direct/relay transport selection, freshness and completeness validation, health cooldowns, automatic failover, and per-loop provenance.
 - Map/renderer adapters for canvas, Mapbox/MapLibre, deck.gl, custom WebGL/WebGPU, Web Mercator view state, tile coverage, and radar quad meshes.
 - Product/cut capability hints, palette import/export, multi-site synchronized loops, pixel-level compositing, cross sections, native RHI/mobile-scan panels, storm/rotation overlays, TOR tracks, TDS markers, and decoded-volume diagnostics for 3D buffer planning.
 
