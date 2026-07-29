@@ -6013,6 +6013,7 @@ function buildLogicalRadarCatalog(options = {}) {
     }
   }
   if (options.includeInternational !== false) {
+    const relayRequiredProviders = new Set(["chmi", "dmi", "dwd", "geosphere", "jma", "ord", "shmu"]);
     for (const site of INTERNATIONAL_RADAR_SITES) {
       const countryCode = internationalCountryCode(site);
       const logicalId = normalizeLogicalRadarSiteId(site.logicalSiteId || `${countryCode}:${site.id}`);
@@ -6033,7 +6034,7 @@ function buildLogicalRadarCatalog(options = {}) {
         role: "preferred",
         priority: 100,
         format: site.format,
-        access: "either",
+        access: relayRequiredProviders.has(site.providerId) ? "relay-required" : "either",
         merge: site.merge,
         siteFilteredDecode: site.siteFilteredDecode,
         live: Boolean(provider?.capabilities?.livePolling ?? provider?.capabilities?.latestPlan),
