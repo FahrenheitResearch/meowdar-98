@@ -4777,6 +4777,9 @@ export class BowEchoRadarToolbox {
   async pollLive(loop, options = {}) {
     const site = normalizeSite(options.site || loop.site);
     let latest = await this.latestRealtimeFrame(site);
+    // The chunk bucket exposes a volume while it is still being written. Keep
+    // displaying the last complete frame until the terminal E chunk arrives.
+    if (latest.complete === false) return { status: "idle", frame: latest, loop };
     if (typeof options.urlTransform === "function") {
       latest = { ...latest, url: latest.url ? options.urlTransform(latest.url) : latest.url };
     }
@@ -4894,7 +4897,10 @@ export class BowEchoRadarToolbox {
     const site = normalizeSite(siteId);
     const frames = [];
     const live = await this.latestRealtimeFrame(site).catch(() => null);
-    if (live) frames.push(live);
+    // Realtime chunk listings include the actively-written volume. It is not
+    // decodeable until its terminal E chunk lands, so fall back to the newest
+    // complete archive frame instead of poisoning an otherwise valid loop.
+    if (live?.complete !== false) frames.push(live);
     const archive = await this.recentArchiveFrames(site, Math.max(1, count), options);
     for (const frame of archive) {
       if (!frames.some((item) => item.cacheKey === frame.cacheKey || item.id === frame.id)) frames.push(frame);
