@@ -5,7 +5,7 @@ const ui = Object.fromEntries([
   "loadButton","refreshButton","playButton","countrySelect","siteSearch","siteSelect","siteCode","siteName",
   "productSelect","frameCount","renderSize","providerValue","transportValue","nativeIdValue","volumeValue",
   "receipt","displayTitle","frameLabel","radarCanvas","emptyState","loadingState","loadingCopy","frameSlider",
-  "timelineCopy","healthDot","engineStatus","statusLead","catalogCount","mapElement",
+  "timelineCopy","healthDot","engineStatus","statusLead","catalogCount","mapElement","siteMarkerLayer",
 ].map((id) => [id, document.getElementById(id)]));
 
 const mapConfig = config.map || {};
@@ -23,6 +23,8 @@ let playTimer = null;
 let map = null;
 let mapReady = false;
 let radarSourceSignature = "";
+let markerUpdateQueued = false;
+const sitePills = new Map();
 
 window.__MEOWDAR98_GLOBAL__ = {
   client,
@@ -54,6 +56,7 @@ function initialize() {
   const initial = client.site(requested) || client.site("FI:FIANJ") || sites[0];
   ui.countrySelect.value = initial?.countryCode || "";
   refreshSiteList(initial?.id);
+  createSitePills();
   if (new URLSearchParams(location.search).get("autoload") === "1") loadSelectedRadar();
 }
 
@@ -73,6 +76,76 @@ function describeSelectedSite() {
   ui.siteCode.textContent = site?.id || "—";
   ui.siteName.textContent = site ? `${site.label} · ${site.country} · ${site.sources.length} source${site.sources.length === 1 ? "" : "s"}` : "No matching radar";
   ui.loadButton.disabled = !site;
+  updateSitePillSelection();
+}
+
+function createSitePills() {
+  ui.siteMarkerLayer.replaceChildren();
+  sitePills.clear();
+  for (const site of sites) {
+    if (!Number.isFinite(Number(site.lon)) || !Number.isFinite(Number(site.lat))) continue;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "site-pill";
+    button.dataset.site = site.id;
+    button.setAttribute("aria-label", `Select ${site.id}, ${site.label}`);
+    button.title = `${site.id} · ${site.label} · ${site.country}`;
+    button.innerHTML = `<i aria-hidden="true"></i><span>${escapeHtml(compactSiteId(site.id))}</span><em>${escapeHtml(site.label)}</em>`;
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!ui.loadingState.hidden) return;
+      ui.siteSearch.value = "";
+      ui.countrySelect.value = site.countryCode || "";
+      refreshSiteList(site.id);
+      updateSitePillSelection();
+      map?.flyTo({ center: [site.lon, site.lat], zoom: Math.max(6.2, map.getZoom()), duration: 500 });
+      await loadSelectedRadar();
+    });
+    ui.siteMarkerLayer.append(button);
+    sitePills.set(site.id, button);
+  }
+  updateSitePillSelection();
+  scheduleSitePillPositions();
+}
+
+function compactSiteId(siteId) {
+  const pieces = String(siteId).split(":");
+  return pieces[pieces.length - 1];
+}
+
+function updateSitePillSelection() {
+  const selected = ui.siteSelect.value;
+  sitePills.forEach((button, siteId) => button.classList.toggle("selected", siteId === selected));
+}
+
+function scheduleSitePillPositions() {
+  if (markerUpdateQueued) return;
+  markerUpdateQueued = true;
+  requestAnimationFrame(() => {
+    markerUpdateQueued = false;
+    updateSitePillPositions();
+  });
+}
+
+function updateSitePillPositions() {
+  if (!mapReady || !map) return;
+  const rect = ui.mapElement.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const zoom = Number(map.getZoom());
+  const detail = zoom >= 7;
+  const overview = zoom < 4.2;
+  const selected = ui.siteSelect.value;
+  ui.siteMarkerLayer.classList.toggle("detail", detail);
+  sitePills.forEach((button, siteId) => {
+    const site = client.site(siteId);
+    const point = map.project([site.lon, site.lat]);
+    const margin = 70;
+    const offscreen = point.x < -margin || point.y < -margin || point.x > rect.width + margin || point.y > rect.height + margin;
+    button.classList.toggle("offscreen", offscreen || (overview && siteId !== selected));
+    button.style.left = `${point.x}px`;
+    button.style.top = `${point.y}px`;
+  });
 }
 
 async function loadSelectedRadar() {
@@ -176,11 +249,14 @@ async function initializeMap() {
     map.on("load", () => {
       mapReady = true;
       map.resize();
+      scheduleSitePillPositions();
       if (session) mountRadarMap(session.index, { fit: true });
     });
+    map.on("move", scheduleSitePillPositions);
+    map.on("zoom", scheduleSitePillPositions);
     map.on("error", (event) => console.info("Basemap resource error", event?.error || event));
-    window.addEventListener("resize", () => map?.resize());
-    if (window.ResizeObserver) new ResizeObserver(() => map?.resize()).observe(ui.mapElement);
+    window.addEventListener("resize", () => { map?.resize(); scheduleSitePillPositions(); });
+    if (window.ResizeObserver) new ResizeObserver(() => { map?.resize(); scheduleSitePillPositions(); }).observe(ui.mapElement);
   } catch (error) {
     console.info("OpenStreetMap basemap unavailable", error);
     ui.engineStatus.textContent = "Radar ready · map unavailable";
@@ -301,6 +377,7 @@ function setBusy(busy, copy = "") {
   ui.loadingCopy.textContent = copy;
   ui.loadButton.disabled = busy || !ui.siteSelect.value;
   ui.refreshButton.disabled = busy || !session;
+  sitePills.forEach((button) => { button.disabled = busy; });
   ui.healthDot.className = busy ? "busy" : ui.healthDot.className;
 }
 
