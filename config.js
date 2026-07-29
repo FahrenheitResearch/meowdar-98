@@ -4,7 +4,7 @@ window.MEOWDAR_CONFIG = {
   // Direct-capable providers are tried first; this allowlisted relay supplies
   // CORS headers for public radar hosts that browsers cannot read directly.
   defaultInternationalSite: "FI:FIANJ",
-  radarRelayUrl: "https://meowdar-98-radar-relay.curse-yacht.workers.dev/",
+  radarRelayUrl: "https://meowdar-98-radar-relay.copy-leo.workers.dev/",
   experimentalPolarRenderer: true,
   radarSites: {
     // CAFIRE handoff: leave allowedSites as "all" for the full BowEcho catalog,
