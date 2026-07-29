@@ -41,13 +41,22 @@ pre { max-height:170px; margin:6px 0 0; padding:6px; overflow:auto; white-space:
 .display { min-width:0; min-height:0; display:flex; flex-direction:column; background:#111; border:2px inset #fff; }
 .display>header { min-height:27px; display:flex; justify-content:space-between; gap:8px; padding:5px 7px; color:#fff; background:#000080; }
 .canvas-wrap { position:relative; min-height:0; flex:1; overflow:hidden; background:#9fc5dc; }
-#mapElement { position:absolute; inset:0; }
+#mapElement { position:absolute; inset:0; z-index:1; }
 .radar-buffer { position:absolute; left:-10000px; top:-10000px; width:768px; height:768px; pointer-events:none; opacity:0; }
+.site-marker-layer { position:absolute; inset:0; z-index:3; overflow:hidden; pointer-events:none; }
+.site-pill { position:absolute; transform:translate(-50%,-50%); min-width:46px; height:23px; display:flex; align-items:center; gap:4px; padding:2px 5px; pointer-events:auto; background:#c0c0c0; color:#000; font-size:10px; border-top:2px solid #fff; border-left:2px solid #fff; border-right:2px solid #000; border-bottom:2px solid #000; box-shadow:1px 1px 0 rgba(0,0,0,.4); white-space:nowrap; }
+.site-pill i { width:6px; height:6px; flex:none; border-radius:50%; background:#00a000; border:1px solid #004000; }
+.site-pill em { display:none; max-width:110px; overflow:hidden; text-overflow:ellipsis; color:#333; font-style:normal; }
+.site-marker-layer.detail .site-pill em { display:inline; }
+.site-pill.selected { color:#fff; background:#000080; border-top-color:#b7b7ff; border-left-color:#b7b7ff; }
+.site-pill.selected i { background:#ffff00; border-color:#805000; }
+.site-pill.offscreen { display:none; }
+.site-pill:disabled { color:#777; pointer-events:none; }
 .maplibregl-map { font:12px "MS Sans Serif",Tahoma,sans-serif; }
 .maplibregl-ctrl-group { border:2px outset #fff; border-radius:0; box-shadow:2px 2px #000; }
 .maplibregl-ctrl-group button { min-height:0; border:0; border-radius:0; }
 .maplibregl-ctrl-attrib { color:#000; }
-#emptyState,#loadingState { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px; text-align:center; color:#fff; background:rgba(2,6,8,.82); }
+#emptyState,#loadingState { position:absolute; inset:0; z-index:4; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px; text-align:center; color:#fff; background:rgba(2,6,8,.82); }
 #emptyState[hidden],#loadingState[hidden] { display:none; }
 .hourglass { font-size:30px; animation:flip 1s steps(2,end) infinite; }
 @keyframes flip { 50% { transform:rotate(180deg); } }

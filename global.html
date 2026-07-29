@@ -7,9 +7,9 @@
   <meta name="description" content="Meowdar 98 global client-side raw polar radar viewer powered by BowEcho WebAssembly.">
   <title>Meowdar 98 · Global Radar</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="./global.css?v=meowdar98-2">
+  <link rel="stylesheet" href="./global.css?v=meowdar98-3">
   <script src="./config.js?v=meowdar98-1"></script>
-  <script type="module" src="./global.js?v=meowdar98-2"></script>
+  <script type="module" src="./global.js?v=meowdar98-3"></script>
 </head>
 <body>
   <main class="desktop">
@@ -67,6 +67,7 @@
           <div class="canvas-wrap">
             <div id="mapElement" role="region" aria-label="Interactive global radar map"></div>
             <canvas id="radarCanvas" class="radar-buffer" width="768" height="768" aria-hidden="true"></canvas>
+            <div id="siteMarkerLayer" class="site-marker-layer" aria-label="Radar sites"></div>
             <div id="emptyState"><b>BowEcho WebAssembly radar</b><span>Select any live logical radar and load it.</span></div>
             <div id="loadingState" hidden><span class="hourglass">⌛</span><b id="loadingCopy">Resolving source…</b></div>
           </div>
