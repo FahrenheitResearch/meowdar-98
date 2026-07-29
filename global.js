@@ -5,8 +5,12 @@ const ui = Object.fromEntries([
   "loadButton","refreshButton","playButton","countrySelect","siteSearch","siteSelect","siteCode","siteName",
   "productSelect","frameCount","renderSize","providerValue","transportValue","nativeIdValue","volumeValue",
   "receipt","displayTitle","frameLabel","radarCanvas","emptyState","loadingState","loadingCopy","frameSlider",
-  "timelineCopy","healthDot","engineStatus","statusLead","catalogCount",
+  "timelineCopy","healthDot","engineStatus","statusLead","catalogCount","mapElement",
 ].map((id) => [id, document.getElementById(id)]));
+
+const mapConfig = config.map || {};
+const radarSourceId = "meowdar98-global-radar";
+const radarLayerId = `${radarSourceId}-layer`;
 
 const client = createRadarClient({
   relayUrl: config.radarRelayUrl || undefined,
@@ -16,12 +20,21 @@ const sites = client.sites({ live: true });
 let visibleSites = [];
 let session = null;
 let playTimer = null;
+let map = null;
+let mapReady = false;
+let radarSourceSignature = "";
 
-window.__MEOWDAR98_GLOBAL__ = { client, sites, get session() { return session; } };
+window.__MEOWDAR98_GLOBAL__ = {
+  client,
+  sites,
+  get session() { return session; },
+  get map() { return map; },
+};
 
 initialize();
 
 function initialize() {
+  initializeMap();
   const countries = [...new Map(sites.map((site) => [site.countryCode, site.country])).entries()]
     .sort((left, right) => left[1].localeCompare(right[1]));
   ui.countrySelect.append(new Option(`All countries (${sites.length})`, ""));
@@ -80,7 +93,7 @@ async function loadSelectedRadar() {
       maxAgeMinutes: 60,
     });
     configureTimeline();
-    drawFrame(session.length - 1);
+    drawFrame(session.length - 1, { fit: true });
     renderReceipt();
     ui.refreshButton.disabled = false;
     ui.playButton.disabled = session.length < 2;
@@ -117,7 +130,7 @@ function configureTimeline() {
   ui.timelineCopy.textContent = `${session.length} frame${session.length === 1 ? "" : "s"}`;
 }
 
-function drawFrame(index) {
+function drawFrame(index, options = {}) {
   if (!session) return;
   session.setIndex(index);
   const frame = session.draw(ui.radarCanvas, index);
@@ -128,7 +141,126 @@ function drawFrame(index) {
   ui.volumeValue.textContent = snapshot.volumeTime || "Unknown";
   ui.timelineCopy.textContent = `${index + 1} / ${session.length}`;
   ui.emptyState.hidden = true;
+  mountRadarMap(index, options);
   return frame;
+}
+
+async function initializeMap() {
+  try {
+    await ensureMapLibre();
+    map = new window.maplibregl.Map({
+      container: ui.mapElement,
+      style: {
+        version: 8,
+        sources: {
+          osm: {
+            type: "raster",
+            tiles: [mapConfig.tileUrl || "https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+            tileSize: 256,
+            maxzoom: Number(mapConfig.maxZoom || 19),
+            attribution: mapConfig.attribution || "© OpenStreetMap contributors",
+          },
+        },
+        layers: [{ id: "osm-basemap", type: "raster", source: "osm" }],
+      },
+      center: [10, 30],
+      zoom: 1.7,
+      minZoom: 1,
+      maxZoom: Math.min(18, Number(mapConfig.maxZoom || 19)),
+      pitchWithRotate: false,
+      dragRotate: false,
+      touchPitch: false,
+      cooperativeGestures: false,
+    });
+    map.addControl(new window.maplibregl.NavigationControl({ showCompass: false }), "top-right");
+    map.on("load", () => {
+      mapReady = true;
+      map.resize();
+      if (session) mountRadarMap(session.index, { fit: true });
+    });
+    map.on("error", (event) => console.info("Basemap resource error", event?.error || event));
+    window.addEventListener("resize", () => map?.resize());
+    if (window.ResizeObserver) new ResizeObserver(() => map?.resize()).observe(ui.mapElement);
+  } catch (error) {
+    console.info("OpenStreetMap basemap unavailable", error);
+    ui.engineStatus.textContent = "Radar ready · map unavailable";
+  }
+}
+
+function mountRadarMap(index, options = {}) {
+  if (!session || !mapReady || !map) return;
+  const specs = session.mapbox({
+    canvas: ui.radarCanvas,
+    index,
+    sourceId: radarSourceId,
+    layerId: radarLayerId,
+    opacity: 0.84,
+    fadeDuration: 0,
+    animate: true,
+  });
+  const signature = JSON.stringify(specs.source.coordinates);
+  const existing = map.getSource(radarSourceId);
+  if (!existing || signature !== radarSourceSignature) {
+    if (map.getLayer(radarLayerId)) map.removeLayer(radarLayerId);
+    if (existing) map.removeSource(radarSourceId);
+    map.addSource(radarSourceId, specs.source);
+    map.addLayer({
+      ...specs.layer,
+      paint: {
+        ...specs.layer.paint,
+        "raster-opacity": 0.84,
+        "raster-fade-duration": 0,
+        "raster-resampling": "nearest",
+      },
+    });
+    radarSourceSignature = signature;
+  } else {
+    existing.setCoordinates?.(specs.source.coordinates);
+  }
+  if (options.fit) fitRadarLayer(specs.radarLayer);
+}
+
+function fitRadarLayer(layer) {
+  const bounds = layer?.bounds;
+  if (!bounds) return;
+  map.fitBounds(
+    [[bounds.west, bounds.south], [bounds.east, bounds.north]],
+    { padding: 36, duration: 650, maxZoom: 8 },
+  );
+}
+
+async function ensureMapLibre() {
+  if (window.maplibregl) return window.maplibregl;
+  for (const href of [mapConfig.cssUrl, ...(mapConfig.cssFallbackUrls || [])].filter(Boolean)) {
+    if (!document.querySelector(`link[href="${href}"]`)) {
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = href;
+      link.crossOrigin = "anonymous";
+      document.head.append(link);
+    }
+  }
+  let lastError = null;
+  for (const url of [mapConfig.libraryUrl, ...(mapConfig.libraryFallbackUrls || [])].filter(Boolean)) {
+    try {
+      await loadScript(url);
+      if (window.maplibregl) return window.maplibregl;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error("Could not load MapLibre GL JS");
+}
+
+function loadScript(url) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = url;
+    script.crossOrigin = "anonymous";
+    script.onload = resolve;
+    script.onerror = () => reject(new Error(`Could not load ${url}`));
+    document.head.append(script);
+  });
 }
 
 function renderReceipt() {
