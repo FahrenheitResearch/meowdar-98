@@ -4,6 +4,15 @@
 /demo.html
   Cache-Control: public, max-age=300
 
+/global.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+/global.js
+  Cache-Control: public, max-age=300
+
+/global.css
+  Cache-Control: public, max-age=300
+
 /app.js
   Cache-Control: public, max-age=300
 

@@ -13,7 +13,8 @@ API key. Optional GOES GLM lightning is also decoded client-side.
 ## Main features
 
 - **Global raw polar radar.** `global.html` uses BowEcho's provider-independent
-  logical-site API for NEXRAD and 159 international radars, including Japan.
+  logical-site API for NEXRAD and 235 international logical radars across all
+  14 BowEcho provider families, including Japan and delayed Australian data.
   Discovery, source health, failover, provenance, Web Worker decoding, and
   rendering all happen in the visitor's browser.
   Direct-capable providers are fetched from the browser. Providers without

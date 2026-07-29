@@ -6,6 +6,8 @@ The package metadata in `web/package.json` exports this same module as `@fahrenh
 
 The static file server only serves files. Public Level II S3 fetches, chunk joining, decoding, product generation, and rendering happen on the user's browser.
 
+For a provider-independent global picker, source failover, relay receipts, and the compact map facade, start with [`UNIVERSAL_RADAR_API.md`](UNIVERSAL_RADAR_API.md). This document covers the lower-level processing toolbox.
+
 ## Minimal Use
 
 ```js
@@ -93,7 +95,7 @@ Each product includes `colorFamily`, matching the native BowEcho color-table fam
 
 `SUPPORTED_ARCHIVE_FORMATS`: supported multi-entry radar archives for browser import. The initial archive format is `mobile-archive-zip`, which groups mobile/research radar sweeps from a standard ZIP before passing separate byte parts to the worker merge path.
 
-`FRAME_PROVIDER_CATALOG`: browser-facing provider descriptors for public NEXRAD live/recent/arbitrary-date archive frames, browser byte/file import, CORS-enabled custom URLs, community GR2A `dir.list` feeds, SMHI Sweden ODIM_H5 international frames, GeoSphere Austria ODIM_H5 international frames, SHMU Slovakia split ODIM_H5 international frames, DWD Germany sweep-merge ODIM_H5 international frames, CHMI Czechia task-merge ODIM_H5 international frames, JMA Japan GRIB2 tar frames, EUMETNET ORD ODIM_H5 frames, DMI Denmark ODIM_H5 international frames, and FMI Finland ODIM_H5 international frames.
+`FRAME_PROVIDER_CATALOG`: browser-facing provider descriptors for public NEXRAD live/recent/arbitrary-date archive frames, browser byte/file import, CORS-enabled custom URLs, community GR2A `dir.list` feeds, and all 14 BowEcho international families: SMHI, DMI, GeoSphere, FMI, SHMU, DWD, CHMI, JMA, EUMETNET ORD, NCI Australia, ARPA Piemonte, ARPA Lombardia, KAIA Estonia, and ANM MeteoRomania.
 
 `supportedByteFormats()`, `supportedArchiveFormats()`, and `frameProviders()`: copy-safe helper accessors for those catalogs.
 
@@ -109,7 +111,7 @@ Each product includes `colorFamily`, matching the native BowEcho color-table fam
 
 `RADAR_SITES`: Level II radar sites with `id`, `name`, `lat`, and `lon`. Profiler-only IDs are filtered out.
 
-`GLOBAL_RADAR_PROVIDERS`, `INTERNATIONAL_RADAR_SITES`, `COMMUNITY_RADAR_FEEDS`, and `COMMUNITY_RADAR_MARKERS`: generated provider/marker catalogs from the BowEcho toolkit source tables. They cover NEXRAD, nine international provider families, and community GR2A-style research feeds.
+`GLOBAL_RADAR_PROVIDERS`, `INTERNATIONAL_RADAR_SITES`, `COMMUNITY_RADAR_FEEDS`, and `COMMUNITY_RADAR_MARKERS`: generated provider/marker catalogs from the BowEcho toolkit source tables. They cover NEXRAD, 14 international provider families, and community GR2A-style research feeds.
 
 `radarSourceCatalog(options)`: filters provider descriptors by id, kind, or query.
 

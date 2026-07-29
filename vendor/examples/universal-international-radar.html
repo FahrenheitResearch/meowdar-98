@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>BowEcho universal international radar</title>
+    <style>
+      :root { color-scheme: dark; font: 14px/1.4 system-ui, sans-serif; }
+      body { margin: 0; background: #0d1117; color: #e6edf3; }
+      main { display: grid; grid-template-columns: minmax(260px, 360px) 1fr; min-height: 100vh; }
+      aside { padding: 20px; border-right: 1px solid #30363d; }
+      section { display: grid; place-items: center; padding: 20px; overflow: auto; }
+      label { display: grid; gap: 6px; margin-bottom: 12px; }
+      select, button { width: 100%; padding: 9px; color: inherit; background: #161b22; border: 1px solid #30363d; border-radius: 6px; }
+      button { cursor: pointer; background: #1f6feb; border-color: #388bfd; font-weight: 650; }
+      button:disabled { cursor: wait; opacity: .65; }
+      canvas { width: min(78vw, 768px); height: min(78vw, 768px); max-width: 100%; image-rendering: pixelated; background: #010409; }
+      pre { max-height: 260px; white-space: pre-wrap; overflow: auto; overflow-wrap: anywhere; color: #8b949e; }
+      .hint { color: #8b949e; }
+      @media (max-width: 760px) { main { grid-template-columns: 1fr; } aside { border-right: 0; border-bottom: 1px solid #30363d; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <aside>
+        <h1>Universal radar</h1>
+        <p>Choose one logical radar. BowEcho chooses, validates, and records the upstream source.</p>
+        <p class="hint">For complete provider coverage, set <code>window.BOWECHO_RELAY_URL</code> or add <code>?relay=https://…</code>.</p>
+        <label>Country <select id="country"></select></label>
+        <label>Radar <select id="site"></select></label>
+        <label>Product <select id="product"><option value="REF">Reflectivity</option></select></label>
+        <label>Cut <select id="cut"><option value="">Automatic lowest cut</option></select></label>
+        <button id="load">Load latest loop</button>
+        <pre id="status">Ready.</pre>
+      </aside>
+      <section><canvas id="radar" width="768" height="768"></canvas></section>
+    </main>
+
+    <script type="module">
+      import { createRadarClient, isRadarSourceResolutionError } from "../radar-toolbox.js";
+
+      const relayUrl = window.BOWECHO_RELAY_URL || new URLSearchParams(location.search).get("relay") || undefined;
+      const radar = createRadarClient({
+        relayUrl,
+        defaults: { frames: 3, product: "REF", width: 768, height: 768, rangeKm: 230 },
+      });
+      const ui = Object.fromEntries(["country", "site", "product", "cut", "load", "status", "radar"]
+        .map((id) => [id, document.getElementById(id)]));
+      const sites = radar.sites({ live: true, source: "international", dataClass: "polar-volume" });
+      const countries = [...new Map(sites.map((site) => [site.countryCode, site.country])).entries()]
+        .sort((a, b) => a[1].localeCompare(b[1]));
+      let session = null;
+
+      for (const [code, label] of countries) ui.country.add(new Option(label, code));
+      ui.country.value = countries.some(([code]) => code === "FI") ? "FI" : countries[0]?.[0];
+      ui.country.addEventListener("change", fillSites);
+      ui.load.addEventListener("click", load);
+      ui.product.addEventListener("change", rerenderProduct);
+      ui.cut.addEventListener("change", rerenderCut);
+      fillSites();
+
+      function fillSites() {
+        ui.site.replaceChildren(...sites
+          .filter((site) => site.countryCode === ui.country.value)
+          .map((site) => new Option(`${site.label} (${site.id})`, site.id)));
+      }
+
+      async function load() {
+        ui.load.disabled = true;
+        ui.status.textContent = `Resolving ${ui.site.value}…`;
+        try {
+          session?.destroy();
+          session = await radar.open(ui.site.value, { product: ui.product.value });
+          session.draw(ui.radar);
+          fillCapabilities();
+          showReceipt();
+        } catch (error) {
+          ui.status.textContent = JSON.stringify({
+            error: String(error.message || error),
+            attempts: isRadarSourceResolutionError(error) ? error.attempts : [],
+          }, null, 2);
+        } finally {
+          ui.load.disabled = false;
+        }
+      }
+
+      async function rerenderProduct() {
+        if (!session) return;
+        await session.setProduct(ui.product.value);
+        session.draw(ui.radar);
+        fillCapabilities();
+        showReceipt();
+      }
+
+      async function rerenderCut() {
+        if (!session || ui.cut.value === "") return;
+        await session.setCut(Number(ui.cut.value));
+        session.draw(ui.radar);
+        showReceipt();
+      }
+
+      function fillCapabilities() {
+        const selectedProduct = session.snapshot().product;
+        ui.product.replaceChildren(...session.productChoices({ availableOnly: true })
+          .map((choice) => new Option(`${choice.name} (${choice.id})`, choice.id, false, choice.id === selectedProduct)));
+        const selectedCut = session.snapshot().cut;
+        ui.cut.replaceChildren(new Option("Automatic lowest cut", ""), ...session.cutChoices({ displayableOnly: true })
+          .map((choice) => new Option(choice.label, String(choice.index), false, choice.index === selectedCut)));
+      }
+
+      function showReceipt() {
+        const snapshot = session.snapshot();
+        ui.status.textContent = JSON.stringify({
+          logicalSite: snapshot.site.id,
+          source: snapshot.source.id,
+          transport: snapshot.provenance.transport,
+          volumeTime: snapshot.volumeTime,
+          frames: snapshot.length,
+          attempts: snapshot.provenance.attempts,
+        }, null, 2);
+      }
+    </script>
+  </body>
+</html>

@@ -179,6 +179,96 @@ export const GLOBAL_RADAR_PROVIDERS = [
     }
   },
   {
+    "id": "australia-nci",
+    "label": "NCI Australia Radar",
+    "country": "Australia",
+    "kind": "international-odim-zip-member",
+    "formats": [
+      "odim-h5"
+    ],
+    "capabilities": {
+      "staticSites": true,
+      "catalog": true,
+      "latestPlan": true,
+      "recentPlan": true,
+      "archive": true,
+      "archiveDelayed": true,
+      "typicalDelayDays": 3,
+      "browserPlanner": true,
+      "clientSideReady": true
+    }
+  },
+  {
+    "id": "arpa-piemonte",
+    "label": "ARPA Piemonte Italy",
+    "country": "Italy",
+    "kind": "international-odim-single",
+    "formats": [
+      "odim-h5"
+    ],
+    "capabilities": {
+      "staticSites": true,
+      "catalog": true,
+      "latestPlan": true,
+      "recentPlan": true,
+      "browserPlanner": true,
+      "clientSideReady": true
+    }
+  },
+  {
+    "id": "arpa-lombardia",
+    "label": "ARPA Lombardia Italy",
+    "country": "Italy",
+    "kind": "international-odim-gzip-merge",
+    "formats": [
+      "odim-h5"
+    ],
+    "capabilities": {
+      "staticSites": true,
+      "catalog": true,
+      "latestPlan": true,
+      "recentPlan": true,
+      "mergeParts": true,
+      "browserPlanner": true,
+      "clientSideReady": true
+    }
+  },
+  {
+    "id": "kaia",
+    "label": "KAIA Estonia",
+    "country": "Estonia",
+    "kind": "international-odim-single",
+    "formats": [
+      "odim-h5"
+    ],
+    "capabilities": {
+      "staticSites": true,
+      "catalog": true,
+      "latestPlan": true,
+      "recentPlan": true,
+      "browserPlanner": true,
+      "clientSideReady": true
+    }
+  },
+  {
+    "id": "meteoromania",
+    "label": "ANM Romania",
+    "country": "Romania",
+    "kind": "international-odim-split",
+    "formats": [
+      "odim-h5"
+    ],
+    "capabilities": {
+      "staticSites": true,
+      "catalog": true,
+      "latestPlan": true,
+      "recentPlan": true,
+      "mergeParts": true,
+      "browserPlanner": true,
+      "clientSideReady": true
+    }
+  },
+  {
     "id": "community-gr2a",
     "label": "Community GR2A Level II feeds",
     "country": "United States",
@@ -197,7 +287,155 @@ export const GLOBAL_RADAR_PROVIDERS = [
   }
 ];
 
+const AUSTRALIA_NCI_SITE_ROWS = [
+  ["2", "Melbourne", "Melb", -37.8553, 144.7554],
+  ["3", "Wollongong", "Wollgng", -34.2625, 150.8752],
+  ["4", "Newcastle", "LemnTre", -32.7298, 152.0254],
+  ["5", "Carnarvon", "Carnvn", -24.8879, 113.6693],
+  ["6", "Geraldton", "Gerlton", -28.8044, 114.6972],
+  ["7", "Wyndham", "Wyndham", -15.4517, 128.1209],
+  ["8", "Gympie", "Kanign", -25.9574, 152.577],
+  ["10", "Darwin AP", "Darwin", -12.4247, 130.8919],
+  ["14", "Mt Gambier", "Gambier", -37.7477, 140.7746],
+  ["15", "Dampier", "Dampier", -20.6535, 116.6833],
+  ["16", "Port Hedland", "PHedld", -20.3719, 118.6317],
+  ["17", "Broome", "Broome", -17.9483, 122.2353],
+  ["19", "Cairns", "Cairns", -16.8182, 145.6628],
+  ["22", "Mackay", "Mackay", -21.1173, 149.2173],
+  ["23", "Gladstone", "Gladstn", -23.855, 151.2626],
+  ["24", "Bowen", "Bowen", -19.8857, 148.0756],
+  ["25", "Alice Springs", "AliceSp", -23.795, 133.8889],
+  ["26", "Perth AP", "PrthAP", -31.9273, 115.9756],
+  ["27", "Woomera", "Woomera", -31.1558, 136.8044],
+  ["28", "Grafton", "Grafton", -29.6206, 152.9633],
+  ["29", "Learmonth", "Lrmonth", -22.1032, 113.9997],
+  ["31", "Albany", "Albany", -34.9418, 117.8163],
+  ["32", "Esperance", "Esprnce", -33.8303, 121.8917],
+  ["33", "Ceduna", "Ceduna", -32.1298, 133.6963],
+  ["36", "Gulf of Carpentaria (Mornington Island)", "GlfCarp", -16.664, 139.1812],
+  ["37", "Hobart Airport", "Hobart", -42.8374, 147.5008],
+  ["38", "Newdegate", "Ndegate", -33.097, 119.0087],
+  ["39", "Halls Creek", "HallsCk", -18.2289, 127.6628],
+  ["40", "Canberra (Captains Flat)", "CapFlat", -35.6614, 149.5122],
+  ["41", "Willis Island", "Willis", -16.2874, 149.9646],
+  ["42", "Katherine (Tindal)", "Tindal", -14.5124, 132.4431],
+  ["44", "Giles", "Giles", -25.0332, 128.3017],
+  ["46", "Adelaide (Sellicks Hill)", "Sellick", -35.3295, 138.5024],
+  ["48", "Kalgoorlie", "Kgrlie", -30.7843, 121.4549],
+  ["49", "Yarrawonga", "NEVic", -36.0297, 146.0228],
+  ["50", "Brisbane (Marburg)", "Marburg", -27.6063, 152.5401],
+  ["52", "N.W. Tasmania (West Takone)", "WTakone", -41.1791, 145.58],
+  ["53", "Moree", "Moree", -29.4903, 149.8462],
+  ["54", "Sydney (Kurnell)", "Kurnell", -34.0148, 151.2263],
+  ["55", "Wagga Wagga", "Wagga", -35.1582, 147.4563],
+  ["56", "Longreach", "Longrch", -23.4398, 144.2822],
+  ["58", "South Doodlakine", "SthDood", -31.7778, 117.9528],
+  ["63", "Darwin (Berrimah)", "Berrima", -12.4559, 130.9265],
+  ["64", "Adelaide (Buckland Park)", "BuckPk", -34.6169, 138.4689],
+  ["66", "Brisbane (Mt Stapylton)", "MtStapl", -27.7178, 153.24],
+  ["67", "Warrego", "Warrego", -26.44, 147.3492],
+  ["68", "Bairnsdale", "Bnsdale", -37.8876, 147.5755],
+  ["69", "Namoi (Blackjack Mountain)", "Namoi", -31.0242, 150.1919],
+  ["70", "Perth (Serpentine)", "Serptin", -32.3917, 115.867],
+  ["71", "Sydney (Terrey Hills)", "THills", -33.7008, 151.2094],
+  ["72", "Emerald", "Emerald", -23.5498, 148.2392],
+  ["73", "Townsville (Hervey Range)", "HrvyRng", -19.4198, 146.5509],
+  ["74", "Greenvale", "Grnvale", -18.9976, 144.9959],
+  ["75", "Mount Isa", "MntIsa", -20.7112, 139.5552],
+  ["76", "Hobart (Mt Koonya)", "Koonya", -43.1126, 147.8052],
+  ["77", "Warruwi", "Arafura", -11.6485, 133.38],
+  ["78", "Weipa", "Weipa78", -12.6664, 141.9247],
+  ["79", "Watheroo", "Wathroo", -30.36, 116.2896],
+  ["93", "Brewarrina", "Brewarr", -29.9708, 146.8136],
+  ["94", "Hillston", "Hillston", -33.552, 145.5286],
+  ["95", "Rainbow (Wimmera)", "Rainbow", -35.9976, 142.0133],
+  ["96", "Yeoval", "Yeoval", -32.7444, 148.7081],
+  ["97", "Mildura", "Mild_DP", -34.2871, 141.5982],
+  ["98", "Taroom", "Taroom", -25.6962, 149.8982],
+  ["105", "Meteopress C-band", "BrisAP", -27.3915, 153.13],
+  ["106", "Townsville", "Townsville", -19.4198, 146.5509],
+  ["107", "Richmond", "Rchmond", -20.7518, 143.1414],
+  ["108", "Toowoomba", "Toowoomba", -27.274, 151.993],
+  ["111", "Karratha", "Karratha", -20.9924, 116.8758],
+  ["112", "Gove", "Gove", -12.275, 136.8199],
+  ["114", "Carnarvon (Gascoyne)", "Carnarvon", -24.8879, 113.6693]
+];
+
+const ADDITIONAL_INTERNATIONAL_RADAR_SITES = [
+  ...AUSTRALIA_NCI_SITE_ROWS.map(([id, label, shortName, lat, lon]) => ({
+    source: "international",
+    providerId: "australia-nci",
+    id,
+    label: shortName && shortName !== label ? `${label} / ${shortName} (${id})` : `${label} (${id})`,
+    country: "Australia",
+    countryCode: "AU",
+    lat,
+    lon,
+    format: "odim-h5",
+    merge: false,
+    siteFilteredDecode: false,
+    availability: "archive-delayed",
+    priority: 50,
+    role: "preferred"
+  })),
+  {
+    source: "international", providerId: "arpa-piemonte", id: "bric", label: "Bric della Croce",
+    country: "Italy", countryCode: "IT", lat: 45.0342, lon: 7.7327, format: "odim-h5",
+    merge: false, siteFilteredDecode: false, priority: 50, role: "preferred"
+  },
+  {
+    source: "international", providerId: "arpa-piemonte", id: "sett", label: "Monte Settepani",
+    country: "Italy", countryCode: "IT", lat: 44.245, lon: 8.1978, format: "odim-h5",
+    merge: false, siteFilteredDecode: false, priority: 50, role: "preferred"
+  },
+  {
+    source: "international", providerId: "arpa-lombardia", id: "des", label: "Desio",
+    country: "Italy", countryCode: "IT", lat: 45.6273, lon: 9.1963, format: "odim-h5",
+    merge: true, siteFilteredDecode: false, priority: 50, role: "preferred"
+  },
+  {
+    source: "international", providerId: "arpa-lombardia", id: "fle", label: "Flero",
+    country: "Italy", countryCode: "IT", lat: 45.4814, lon: 10.1768, format: "odim-h5",
+    merge: true, siteFilteredDecode: false, priority: 50, role: "preferred"
+  },
+  {
+    source: "international", providerId: "kaia", id: "eehar", label: "Harku",
+    country: "Estonia", countryCode: "EE", lat: 59.3971, lon: 24.6021, format: "odim-h5",
+    merge: false, siteFilteredDecode: false, priority: 50, role: "preferred"
+  },
+  {
+    source: "international", providerId: "kaia", id: "eesur", label: "Sürgavere",
+    country: "Estonia", countryCode: "EE", lat: 58.4823, lon: 25.5187, format: "odim-h5",
+    merge: false, siteFilteredDecode: false, priority: 50, role: "preferred"
+  },
+  ...[
+    ["BAR", "robar", "Bârnova", 47.0118, 27.5825],
+    ["BOB", "robob", "Bobohalma", 46.3602, 24.2252],
+    ["BUC", "robuc", "București", 44.5127, 26.0773],
+    ["CRA", "rocra", "Craiova", 44.3103, 23.8674],
+    ["MED", "romed", "Medgidia", 44.2434, 28.2506],
+    ["ORA", "roora", "Oradea", 47.0922, 21.9429],
+    ["TIM", "rotim", "Timișoara", 45.7717, 21.2577]
+  ].map(([id, logicalId, label, lat, lon]) => ({
+    source: "international",
+    providerId: "meteoromania",
+    id,
+    logicalSiteId: `RO:${logicalId}`,
+    label,
+    country: "Romania",
+    countryCode: "RO",
+    lat,
+    lon,
+    format: "odim-h5",
+    merge: true,
+    siteFilteredDecode: false,
+    priority: 50,
+    role: "preferred"
+  }))
+];
+
 export const INTERNATIONAL_RADAR_SITES = [
+  ...ADDITIONAL_INTERNATIONAL_RADAR_SITES,
   {
     "source": "international",
     "providerId": "smhi",

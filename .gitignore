@@ -4,3 +4,5 @@ Thumbs.db
 .env
 .env.*
 .wrangler/
+node_modules/
+*.log

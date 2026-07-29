@@ -8,6 +8,9 @@
 - Added loop completeness and freshness validation with last-source error diagnostics.
 - Added direct, custom-fetch, and optional relay transports with per-loop source provenance and attempt receipts.
 - Added a dependency-free international site-picker example and an allowlisted byte-preserving Cloudflare Worker relay template.
+- Reached browser planner parity with all 14 BowEcho international provider families, including ranged NCI ZIP-member reads, Piemonte volumes, Lombardia gzip/multipart volumes, KAIA POST discovery, and MeteoRomania multipart volumes.
+- Added built-in native-to-ORD failover for overlapping Estonia and Romania logical radars and source-aware freshness policies for delayed archives.
+- Preserved international/community georeferencing context across cached product and cut rerenders so provider-native IDs are never reinterpreted as NEXRAD sites.
 - Preserved the complete 0.1 provider-specific API without behavioral changes.
 
 ## 0.1.0

@@ -1,4 +1,4 @@
-import { createRadarClient } from "./vendor/radar-toolbox.js?v=meowdar98-universal4";
+import { createRadarClient } from "./vendor/radar-toolbox.js?v=meowdar98-universal8";
 
 const config = window.MEOWDAR_CONFIG || {};
 const ui = Object.fromEntries([
@@ -15,18 +15,41 @@ const sitePointSourceId = "meowdar98-radar-sites";
 const sitePointLayerId = `${sitePointSourceId}-points`;
 const sitePointHitLayerId = `${sitePointSourceId}-hit-targets`;
 const sitePillZoom = 4.2;
+const compactMobile = window.matchMedia?.("(max-width: 760px)").matches;
 
 const client = createRadarClient({
   relayUrl: config.radarRelayUrl || undefined,
   defaults: { frames: 3, product: "REF", fallbackProducts: ["VEL", "CC"], width: 768, height: 768, rangeKm: 230 },
 });
-let sites = client.sites({ live: true });
-let visibleSites = [];
+const queryParams = new URLSearchParams(location.search);
+const requestedFromUrl = queryParams.get("site");
+const requestedSiteId = requestedFromUrl ? client.site(requestedFromUrl)?.id || null : null;
+const catalogSites = client.sites({ live: true });
+// These catalog entries were the only stale/no-current-volume results in the
+// exhaustive live audit. This is a safety quarantine, not a permanent denylist:
+// lightweight metadata probes below automatically restore a site as soon as it
+// has a volume no more than one hour old.
+const availabilityAuditWatchlist = new Set([
+  "US:TBNA", "US:TMSP",
+  "ES:ESAHR",
+  "HR:HRBIL", "HR:HRDEB", "HR:HRGRA", "HR:HRPUN", "HR:HRULJ",
+  "PL:PLLEG", "SE:LEKSAND",
+]);
+const availabilityBySite = new Map();
+const availabilityMaxAgeMinutes = 60;
+const availabilityProbeTimeoutMs = 8000;
+const availabilityRefreshIntervalMs = 5 * 60_000;
+let realtimeNexradSiteIds = null;
+let availabilityRefreshPromise = null;
 let session = null;
+let loadingSiteId = null;
+let loadGeneration = 0;
+let lastRequestedSiteId = null;
+let sites = selectableCatalogSites();
+let visibleSites = [];
 let playTimer = null;
 let map = null;
 let mapReady = false;
-let radarSourceSignature = "";
 let markerUpdateQueued = false;
 const sitePills = new Map();
 
@@ -35,24 +58,35 @@ window.__MEOWDAR98_GLOBAL__ = {
   get sites() { return sites; },
   get session() { return session; },
   get map() { return map; },
+  get availability() { return Object.fromEntries(availabilityBySite); },
+  refreshAvailability: () => refreshLiveAvailability(),
 };
 
 initialize();
 
 async function initialize() {
-  try {
-    const realtimeNexrad = new Set(await client.toolbox.nexradRealtimeSiteIds({ timeoutMs: 8000 }));
-    sites = sites.filter((site) => site.sources.some((source) => source.source !== "nexrad"
-      || realtimeNexrad.has(source.providerSiteId)));
-  } catch (error) {
-    console.info("Realtime NEXRAD inventory unavailable; retaining the capability catalog", error);
-  }
   initializeMap();
+  if (compactMobile) {
+    ui.frameCount.value = "1";
+    ui.renderSize.value = "512";
+    await client.configureCache({
+      bytes: 8,
+      volumes: 8,
+      metadata: 24,
+      renders: 24,
+      sections: 8,
+      nativePpi: 8,
+      nativeRhi: 8,
+      diagnostics: 8,
+      analyses: 8,
+      torTracks: 8,
+    });
+  }
   const countries = [...new Map(sites.map((site) => [site.countryCode, site.country])).entries()]
     .sort((left, right) => left[1].localeCompare(right[1]));
   ui.countrySelect.append(new Option(`All countries (${sites.length})`, ""));
   for (const [code, name] of countries) ui.countrySelect.append(new Option(`${name} (${code})`, code));
-  ui.catalogCount.textContent = `${sites.length} live logical radars`;
+  ui.catalogCount.textContent = `${sites.length} selectable radars`;
   ui.countrySelect.addEventListener("change", refreshSiteList);
   ui.siteSearch.addEventListener("input", refreshSiteList);
   ui.siteSelect.addEventListener("change", describeSelectedSite);
@@ -60,11 +94,10 @@ async function initialize() {
   ui.refreshButton.addEventListener("click", refreshSource);
   ui.playButton.addEventListener("click", togglePlayback);
   ui.frameSlider.addEventListener("input", () => drawFrame(Number(ui.frameSlider.value)));
-  for (const control of [ui.productSelect, ui.frameCount, ui.renderSize]) {
+  ui.productSelect.addEventListener("change", () => { if (session) rerenderProduct(); });
+  for (const control of [ui.frameCount, ui.renderSize]) {
     control.addEventListener("change", () => { if (session) loadSelectedRadar(); });
   }
-  const queryParams = new URLSearchParams(location.search);
-  const requestedFromUrl = queryParams.get("site");
   const requested = requestedFromUrl || config.defaultInternationalSite || "FI:FIANJ";
   const requestedSite = client.site(requested);
   const liveRequestedSite = sites.find((site) => site.id === requestedSite?.id);
@@ -78,6 +111,190 @@ async function initialize() {
   } else if (queryParams.get("autoload") === "1") {
     loadSelectedRadar();
   }
+  // Availability discovery is deliberately not awaited: the map, controls,
+  // and an explicitly requested healthy site stay interactive while only
+  // small listings/HEAD metadata are checked in the background.
+  void refreshLiveAvailability();
+  window.setInterval(() => {
+    if (document.visibilityState === "visible") void refreshLiveAvailability();
+  }, availabilityRefreshIntervalMs);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") void refreshLiveAvailability();
+  });
+}
+
+function selectableCatalogSites() {
+  return catalogSites.filter((site) => {
+    const pinned = site.id === loadingSiteId
+      || site.id === session?.site?.id
+      || (site.id === requestedSiteId && !availabilityBySite.has(site.id));
+    if (pinned) return true;
+    const watched = availabilityAuditWatchlist.has(site.id);
+    if (watched && currentAvailabilityEvidence(site.id)?.status !== "fresh") return false;
+    if (!realtimeNexradSiteIds) return true;
+    return site.sources.some((source) => source.source !== "nexrad"
+      || realtimeNexradSiteIds.has(source.providerSiteId));
+  });
+}
+
+function reconcileAvailableSites() {
+  const preferredId = ui.siteSelect.value;
+  const preferredCountry = ui.countrySelect.value;
+  sites = selectableCatalogSites();
+  const countries = [...new Map(sites.map((site) => [site.countryCode, site.country])).entries()]
+    .sort((left, right) => left[1].localeCompare(right[1]));
+  ui.countrySelect.replaceChildren(
+    new Option(`All countries (${sites.length})`, ""),
+    ...countries.map(([code, name]) => new Option(`${name} (${code})`, code)),
+  );
+  ui.countrySelect.value = countries.some(([code]) => code === preferredCountry) ? preferredCountry : "";
+  const hiddenCount = catalogSites.length - sites.length;
+  ui.catalogCount.textContent = hiddenCount
+    ? `${sites.length} selectable radars · ${hiddenCount} offline/stale`
+    : `${sites.length} selectable radars`;
+  refreshSiteList(preferredId);
+  createSitePills();
+  updateSitePointSelection();
+}
+
+async function refreshLiveAvailability() {
+  if (availabilityRefreshPromise) return availabilityRefreshPromise;
+  availabilityRefreshPromise = (async () => {
+    const inventoryTask = client.toolbox.nexradRealtimeSiteIds({ timeoutMs: availabilityProbeTimeoutMs })
+      .then((ids) => { realtimeNexradSiteIds = new Set(ids); })
+      .catch((error) => console.info("Realtime NEXRAD inventory unavailable; retaining the last inventory", error));
+    const watchTask = mapWithConcurrency([...availabilityAuditWatchlist], 3, async (siteId) => {
+      const evidence = await probeSiteAvailability(client.site(siteId));
+      const previous = availabilityBySite.get(siteId);
+      let resolved = evidence;
+      if (evidence.status === "unknown" && previous?.volumeTime) {
+        const agedPrevious = freshnessEvidence(previous.volumeTime);
+        if (agedPrevious.status === "fresh") resolved = { ...previous, ...agedPrevious };
+      }
+      availabilityBySite.set(siteId, { ...resolved, checkedAt: new Date().toISOString() });
+    });
+    await Promise.all([inventoryTask, watchTask]);
+    reconcileAvailableSites();
+  })().finally(() => { availabilityRefreshPromise = null; });
+  return availabilityRefreshPromise;
+}
+
+function currentAvailabilityEvidence(siteId) {
+  const evidence = availabilityBySite.get(siteId);
+  if (!evidence) return null;
+  if (evidence.volumeTime) return { ...evidence, ...freshnessEvidence(evidence.volumeTime) };
+  const checkedMillis = Date.parse(String(evidence.checkedAt || ""));
+  if (evidence.status === "fresh"
+      && (!Number.isFinite(checkedMillis) || Date.now() - checkedMillis > 2 * availabilityRefreshIntervalMs)) {
+    return { ...evidence, status: "unknown", reason: "freshness evidence expired" };
+  }
+  return evidence;
+}
+
+async function probeSiteAvailability(site) {
+  if (!site?.sources?.length) return { status: "unavailable", reason: "no source bindings" };
+  const results = [];
+  for (const source of site.sources) {
+    const result = source.source === "nexrad"
+      ? await probeNexradSource(source)
+      : source.source === "international"
+        ? await probeInternationalSource(source)
+        : { status: "unknown", reason: `no metadata probe for ${source.source}` };
+    results.push(result);
+    if (result.status === "fresh") return result;
+  }
+  const unknown = results.find((result) => result.status === "unknown");
+  return unknown || results[0] || { status: "unavailable", reason: "no usable source" };
+}
+
+async function probeNexradSource(source) {
+  const now = new Date();
+  const hours = [now, new Date(now.getTime() - 60 * 60_000)];
+  const fetchers = [client.fetch, client.relayFetch].filter((fetcher, index, list) =>
+    typeof fetcher === "function" && list.indexOf(fetcher) === index);
+  let lastError = null;
+  for (const fetcher of fetchers) {
+    try {
+      const frames = [];
+      for (const hour of hours) {
+        const stamp = `${hour.getUTCFullYear()}${pad2(hour.getUTCMonth() + 1)}${pad2(hour.getUTCDate())}_${pad2(hour.getUTCHours())}`;
+        const prefix = `${client.toolbox.nexradArchiveDatePrefix(source.providerSiteId, hour)}${source.providerSiteId}${stamp}`;
+        const url = client.toolbox.nexradArchiveListingUrl(source.providerSiteId, hour, { prefix, maxKeys: 1000 });
+        const text = await fetchProbeText(fetcher, url);
+        frames.push(...client.toolbox.parseNexradArchiveListing(source.providerSiteId, hour, text, { prefix }));
+      }
+      if (!frames.length) return { status: "unavailable", reason: "no current-hour archive volume" };
+      const newest = frames.map((frame) => frame.volumeTime).filter(Boolean).sort().at(-1);
+      return freshnessEvidence(newest);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  return { status: "unknown", reason: String(lastError?.message || lastError || "NEXRAD metadata probe failed") };
+}
+
+async function probeInternationalSource(source) {
+  const directFetch = source.access === "relay-required" ? null : client.fetch;
+  const fetchers = [directFetch, client.relayFetch].filter((fetcher, index, list) =>
+    typeof fetcher === "function" && list.indexOf(fetcher) === index);
+  let lastError = null;
+  for (const fetcher of fetchers) {
+    try {
+      const plan = await client.toolbox.latestInternationalFramePlan(source.providerId, source.providerSiteId, {
+        fetch: fetcher,
+        timeoutMs: availabilityProbeTimeoutMs,
+        now: new Date(),
+      });
+      return freshnessEvidence(plan?.volumeTime);
+    } catch (error) {
+      lastError = error;
+      if (isDefinitiveAvailabilityFailure(error)) {
+        return { status: "unavailable", reason: String(error?.message || error) };
+      }
+    }
+  }
+  return { status: "unknown", reason: String(lastError?.message || lastError || "international metadata probe failed") };
+}
+
+function freshnessEvidence(volumeTime) {
+  const volumeMillis = Date.parse(String(volumeTime || ""));
+  if (!Number.isFinite(volumeMillis)) return { status: "unknown", reason: "latest volume has no parseable timestamp" };
+  const ageMinutes = (Date.now() - volumeMillis) / 60_000;
+  if (ageMinutes < -15) return { status: "unknown", reason: `latest volume is ${Math.round(-ageMinutes)} minutes in the future` };
+  if (ageMinutes > availabilityMaxAgeMinutes) {
+    return { status: "unavailable", reason: `latest volume is stale by ${Math.round(ageMinutes)} minutes`, volumeTime };
+  }
+  return { status: "fresh", reason: `latest volume is ${Math.max(0, Math.round(ageMinutes))} minutes old`, volumeTime };
+}
+
+function isDefinitiveAvailabilityFailure(error) {
+  const message = String(error?.message || error);
+  return /\bno (?:recent |current |archive )?(?:frames?|volumes?|files?|objects?|sweeps?|date director(?:y|ies)|tarlists?)\b/i.test(message)
+    || /\b(?:no frames|no chunks|empty radar loop|latest volume is stale)\b/i.test(message);
+}
+
+async function fetchProbeText(fetcher, url) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), availabilityProbeTimeoutMs);
+  try {
+    const response = await fetcher(url, { signal: controller.signal, cache: "no-store" });
+    if (!response?.ok) throw new Error(`${response?.status || 0} ${response?.statusText || "metadata fetch failed"}`);
+    return response.text();
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+async function mapWithConcurrency(items, limit, worker) {
+  const queue = [...items];
+  const workers = Array.from({ length: Math.min(limit, queue.length) }, async () => {
+    while (queue.length) await worker(queue.shift());
+  });
+  await Promise.all(workers);
+}
+
+function pad2(value) {
+  return String(value).padStart(2, "0");
 }
 
 function refreshSiteList(preferredId = "") {
@@ -102,6 +319,10 @@ function describeSelectedSite() {
 function createSitePills() {
   ui.siteMarkerLayer.replaceChildren();
   sitePills.clear();
+  if (compactMobile) {
+    updateSitePillSelection();
+    return;
+  }
   for (const site of sites) {
     if (!Number.isFinite(Number(site.lon)) || !Number.isFinite(Number(site.lat))) continue;
     const button = document.createElement("button");
@@ -186,7 +407,9 @@ function installSitePointLayers() {
     type: "circle",
     source: sitePointSourceId,
     paint: {
-      "circle-radius": ["interpolate", ["linear"], ["zoom"], 1, 9, 7, 14],
+      "circle-radius": compactMobile
+        ? ["interpolate", ["linear"], ["zoom"], 1, 18, 7, 22]
+        : ["interpolate", ["linear"], ["zoom"], 1, 9, 7, 14],
       "circle-color": "#000000",
       "circle-opacity": 0.001,
     },
@@ -236,13 +459,18 @@ function updateSitePillPositions() {
 async function loadSelectedRadar() {
   const site = client.site(ui.siteSelect.value);
   if (!site) return;
+  const generation = ++loadGeneration;
+  loadingSiteId = site.id;
   stopPlayback();
   setBusy(true, `Resolving ${site.id}…`);
   try {
+    const sourceChanged = lastRequestedSiteId && lastRequestedSiteId !== site.id;
     session?.destroy();
     session = null;
+    if (compactMobile && sourceChanged) await client.clearCache();
+    lastRequestedSiteId = site.id;
     const size = Number(ui.renderSize.value);
-    session = await client.open(site.id, {
+    const openedSession = await client.open(site.id, {
       frames: Number(ui.frameCount.value),
       product: ui.productSelect.value,
       width: size,
@@ -251,6 +479,11 @@ async function loadSelectedRadar() {
       minimumFrames: 1,
       maxAgeMinutes: 60,
     });
+    if (generation !== loadGeneration || ui.siteSelect.value !== site.id) {
+      openedSession.destroy();
+      return;
+    }
+    session = openedSession;
     ui.productSelect.value = session.snapshot().product;
     configureTimeline();
     drawFrame(session.length - 1, { fit: true });
@@ -261,9 +494,16 @@ async function loadSelectedRadar() {
     ui.engineStatus.textContent = "WASM decode verified";
     ui.emptyState.hidden = true;
   } catch (error) {
-    showError(error);
+    if (generation === loadGeneration) {
+      showError(error);
+      quarantineDefinitivelyUnavailableSite(site, error);
+    }
   } finally {
-    setBusy(false);
+    if (generation === loadGeneration) {
+      loadingSiteId = null;
+      setBusy(false);
+      if (currentAvailabilityEvidence(site.id)?.status === "unavailable") reconcileAvailableSites();
+    }
   }
 }
 
@@ -356,46 +596,45 @@ async function initializeMap() {
 
 function mountRadarMap(index, options = {}) {
   if (!session || !mapReady || !map) return;
-  const specs = session.mapbox({
+  const specs = session.syncMapLibre(map, {
     canvas: ui.radarCanvas,
     index,
     sourceId: radarSourceId,
     layerId: radarLayerId,
     opacity: 0.84,
     fadeDuration: 0,
-    animate: true,
+    beforeId: map.getLayer(sitePointLayerId) ? sitePointLayerId : undefined,
+    fit: Boolean(options.fit),
+    fitOptions: { padding: 36, duration: 650, maxZoom: 8 },
   });
-  const signature = JSON.stringify(specs.source.coordinates);
-  const existing = map.getSource(radarSourceId);
-  if (!existing || signature !== radarSourceSignature) {
-    if (map.getLayer(radarLayerId)) map.removeLayer(radarLayerId);
-    if (existing) map.removeSource(radarSourceId);
-    map.addSource(radarSourceId, specs.source);
-    const radarLayer = {
-      ...specs.layer,
-      paint: {
-        ...specs.layer.paint,
-        "raster-opacity": 0.84,
-        "raster-fade-duration": 0,
-        "raster-resampling": "nearest",
-      },
-    };
-    if (map.getLayer(sitePointLayerId)) map.addLayer(radarLayer, sitePointLayerId);
-    else map.addLayer(radarLayer);
-    radarSourceSignature = signature;
-  } else {
-    existing.setCoordinates?.(specs.source.coordinates);
-  }
-  if (options.fit) fitRadarLayer(specs.radarLayer);
+  map.setPaintProperty?.(radarLayerId, "raster-resampling", "nearest");
+  return specs;
 }
 
-function fitRadarLayer(layer) {
-  const bounds = layer?.bounds;
-  if (!bounds) return;
-  map.fitBounds(
-    [[bounds.west, bounds.south], [bounds.east, bounds.north]],
-    { padding: 36, duration: 650, maxZoom: 8 },
-  );
+async function rerenderProduct() {
+  if (!session) return;
+  const activeSession = session;
+  const generation = ++loadGeneration;
+  stopPlayback();
+  setBusy(true, `Rendering ${productLabel(ui.productSelect.value)}…`);
+  try {
+    await activeSession.setProduct(ui.productSelect.value, {
+      fallbackProducts: ["REF", "VEL", "CC"].filter((product) => product !== ui.productSelect.value),
+    });
+    if (generation !== loadGeneration || session !== activeSession) return;
+    ui.productSelect.value = activeSession.snapshot().product;
+    configureTimeline();
+    drawFrame(Math.min(activeSession.index, activeSession.length - 1));
+    renderReceipt();
+    ui.statusLead.innerHTML = `<b>${productLabel(activeSession.snapshot().product)} rendered from cache</b>`;
+  } catch (error) {
+    if (generation === loadGeneration && session === activeSession) {
+      ui.productSelect.value = activeSession.snapshot().product;
+      showError(error);
+    }
+  } finally {
+    if (generation === loadGeneration) setBusy(false);
+  }
 }
 
 async function ensureMapLibre() {
@@ -475,6 +714,10 @@ function setBusy(busy, copy = "") {
 }
 
 function showError(error) {
+  const message = String(error?.message || error);
+  const shortMessage = /^all radar sources failed/i.test(message)
+    ? "No recent usable volume is available from this radar. Try another nearby site."
+    : message.length > 180 ? `${message.slice(0, 177)}\u2026` : message;
   ui.healthDot.className = "bad";
   ui.engineStatus.textContent = "Source failed";
   ui.statusLead.innerHTML = "<b>Load failed</b>";
@@ -482,9 +725,27 @@ function showError(error) {
   ui.transportValue.textContent = "—";
   ui.nativeIdValue.textContent = "—";
   ui.volumeValue.textContent = "—";
-  ui.receipt.textContent = JSON.stringify({ error: String(error?.message || error), attempts: error?.attempts || [] }, null, 2);
+  ui.receipt.textContent = JSON.stringify({ error: message, attempts: error?.attempts || [] }, null, 2);
   ui.emptyState.hidden = false;
-  ui.emptyState.innerHTML = `<b>Could not load this source</b><span>${escapeHtml(String(error?.message || error))}</span>`;
+  ui.emptyState.innerHTML = `<b>Could not load this source</b><span>${escapeHtml(shortMessage)}</span>`;
+}
+
+function quarantineDefinitivelyUnavailableSite(site, error) {
+  const attempts = Array.isArray(error?.attempts) ? error.attempts.filter((attempt) => attempt?.status === "failed") : [];
+  const attemptsBySource = attempts.reduce((groups, attempt) =>
+    groups.set(attempt.sourceId, [...(groups.get(attempt.sourceId) || []), attempt]), new Map());
+  const definitivelyUnavailable = attemptsBySource.size
+    ? [...attemptsBySource.values()].every((sourceAttempts) =>
+      sourceAttempts.some((attempt) => isDefinitiveAvailabilityFailure(attempt.error)))
+    : isDefinitiveAvailabilityFailure(error);
+  if (!site?.id || !definitivelyUnavailable) return;
+  availabilityAuditWatchlist.add(site.id);
+  availabilityBySite.set(site.id, {
+    status: "unavailable",
+    reason: String(error?.message || error),
+    checkedAt: new Date().toISOString(),
+  });
+  reconcileAvailableSites();
 }
 
 function productLabel(code) {

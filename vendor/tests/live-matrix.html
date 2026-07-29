@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Meowdar live radar matrix</title>
+  <style>
+    body { margin: 12px; color: #111; background: #fff; font: 13px/1.4 system-ui, sans-serif; }
+    h1 { margin: 0 0 8px; font-size: 18px; }
+    p { margin: 6px 0; }
+    code { background: #f1f3f5; padding: 1px 4px; border-radius: 3px; }
+    #summary { margin: 8px 0; font-weight: 700; }
+    #controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    button { padding: 5px 9px; }
+    details { margin: 8px 0; max-width: 90ch; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+    canvas { position: fixed; left: -9999px; width: 256px; height: 256px; }
+  </style>
+</head>
+<body>
+  <h1>Meowdar live radar matrix</h1>
+  <p>Strict live <code>REF</code> download, WASM decode, render, and canvas verification.</p>
+  <div id="controls">
+    <div id="summary" role="status" aria-live="polite">Starting...</div>
+    <button id="copy-report" type="button">Copy JSON</button>
+  </div>
+  <details>
+    <summary>Query controls</summary>
+    <p>
+      Filters: <code>provider=ord,jma</code>, <code>country=FR</code>,
+      <code>sites=FR:FRTRE,EE:EESUR</code>, <code>source=ord:frtre</code>,
+      <code>sourceProvider=ord</code>, <code>limit=10</code>,
+      <code>shards=4&amp;shard=0</code>.
+    </p>
+    <p>
+      Test behavior: <code>scope=both|logical|sources</code> (default <code>both</code>),
+      <code>fallback=VEL,CC</code> (disabled by default), <code>frames=1</code>,
+      <code>maxAge=60|off</code>, <code>timeout=45000</code>,
+      <code>clearCache=1|0</code>, <code>cacheStats=1|0</code>,
+      <code>relay=off|https://...</code>.
+    </p>
+  </details>
+  <pre id="results"></pre>
+  <canvas id="render" width="256" height="256"></canvas>
+  <script type="module" src="./live-matrix.mjs"></script>
+</body>
+</html>

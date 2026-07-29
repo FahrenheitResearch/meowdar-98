@@ -67,4 +67,21 @@ pre { max-height:170px; margin:6px 0 0; padding:6px; overflow:auto; white-space:
 .status-bar { min-height:28px; display:flex; gap:3px; padding:3px; }
 .status-bar>span { min-width:110px; padding:4px 7px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; border:2px inset #fff; }
 .status-bar .grow { flex:1; }
-@media(max-width:760px){.desktop{padding:0}.window{min-height:100dvh}.workspace{grid-template-columns:1fr}.controls{max-height:none}.display{min-height:58dvh}.status-bar .grow{display:none}}
+@media(max-width:760px){
+  .desktop{padding:0}
+  .window{min-height:100dvh;box-shadow:none}
+  .title-bar span:last-child{display:none}
+  .window-buttons{display:none}
+  .menu-bar{gap:12px;padding-inline:6px}
+  .toolbar{flex-wrap:wrap;overflow:visible}
+  .toolbar .spacer{display:none}
+  .toolbar .chip{display:none}
+  .workspace{display:flex;flex-direction:column;gap:5px;padding:5px}
+  .display{order:-1;min-height:60dvh;height:calc(100dvh - 145px);flex:none}
+  .controls{max-height:none;overflow:visible}
+  #siteSelect{min-height:132px}
+  label{grid-template-columns:68px minmax(0,1fr)}
+  .status-bar{flex-wrap:wrap}
+  .status-bar>span{min-width:0;flex:1}
+  .status-bar .grow{display:none}
+}
