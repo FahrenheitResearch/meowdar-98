@@ -4,7 +4,7 @@ import {
   COMMUNITY_RADAR_MARKERS,
   GLOBAL_RADAR_PROVIDERS,
   INTERNATIONAL_RADAR_SITES,
-} from "./global-radar-catalog.js";
+} from "./global-radar-catalog.js?v=20260729-provider-parity1";
 
 export {
   COMMUNITY_RADAR_FEEDS,
@@ -20,6 +20,10 @@ export const EARTH_RADIUS_KM = 6371.0088;
 export const WEB_MERCATOR_RADIUS_M = 6378137;
 export const MAX_WEB_MERCATOR_LAT = 85.05112878;
 export const DEFAULT_USER_PALETTE_STORAGE_KEY = "bowecho:user-palettes:v1";
+export const AUSTRALIA_NCI_BASE_URL = "https://thredds.nci.org.au/thredds/fileServer/rq0";
+export const AUSTRALIA_NCI_SITE_LIST_URL = `${AUSTRALIA_NCI_BASE_URL}/radar_site_list.csv`;
+export const ARPA_LOMBARDIA_RADAR_ROOT = "https://radarlive.arpalombardia.it/Volumi";
+export const ARPA_PIEMONTE_RADAR_ROOT = "https://www.arpa.piemonte.it/rischi_naturali/radar";
 export const CHMI_RADAR_SITES_ROOT = "https://opendata.chmi.cz/meteorology/weather/radar/sites";
 export const DMI_RADAR_VOLUME_ITEMS_URL = "https://opendataapi.dmi.dk/v1/radardata/collections/volume/items";
 export const DWD_RADAR_SITES_ROOT = "https://opendata.dwd.de/weather/radar/sites";
@@ -27,6 +31,9 @@ export const FMI_RADAR_VOLUME_BUCKET_URL = "https://fmi-opendata-radar-volume-hd
 export const GEOSPHERE_DATAHUB_URL = "https://public.hub.geosphere.at/datahub";
 export const GEOSPHERE_HOCHFICHT_PREFIX = "resources/radar_volumen_hochficht-v1-5min/filelisting/";
 export const JMA_RADAR_BASE_URL = "https://pawr.nict.go.jp/jmadata/JMA-PolarCoordsRadar";
+export const KAIA_QUERY_URL = "https://avaandmed.keskkonnaportaal.ee/api/lists/active/items/query";
+export const KAIA_FILE_BASE_URL = "https://avaandmed.keskkonnaportaal.ee/api/lists/active";
+export const METEOROMANIA_RADAR_ROOT = "https://opendata.meteoromania.ro/radar";
 export const ORD_RADAR_BUCKET_URL = "https://s3.waw3-1.cloudferro.com/openradar-24h";
 export const SHMU_RADAR_VOLUME_ROOT = "https://opendata.shmu.sk/meteorology/weather/radar/volume";
 export const SMHI_RADAR_API_BASE = "https://opendata-download-radar.smhi.se/api/version/latest";
@@ -69,6 +76,33 @@ const JMA_STAMP_STEP_MINUTES = 5;
 const JMA_LOOKBACK_MINUTES = 40;
 const ORD_CYCLE_WINDOW_MINUTES = 5;
 const ORD_HOUR_LOOKBACK_SLOTS = 6;
+const ORD_MIXED_SOURCE_MAX_AGE_MINUTES = 20;
+const ORD_COMPLETE_FRAME_MAX_AGE_MINUTES = 20;
+const AUSTRALIA_NCI_LATEST_LOOKBACK_DAYS = 14;
+const AUSTRALIA_NCI_RECENT_LOOKBACK_DAYS = 7;
+const AUSTRALIA_NCI_MAX_RECENT_FRAMES = 96;
+const AUSTRALIA_NCI_MAX_STALE_MINUTES = 14 * 24 * 60;
+const AUSTRALIA_NCI_ZIP_TAIL_BYTES = 22 + 0xffff;
+const LOMBARDIA_REQUIRED_PRODUCTS = ["DBZH", "VRADH"];
+const LOMBARDIA_OPTIONAL_PRODUCTS = ["TH", "ZDR", "RHOHV", "PHIDP", "KDP", "WRADH", "CLASS"];
+const METEOROMANIA_MOMENT_ORDER = ["dBZ", "V", "ZDR", "KDP", "RhoHV"];
+const METEOROMANIA_STAMP_SETTLE_MINUTES = 9;
+const KAIA_LOOKBACK_DAYS = 14;
+const KAIA_PAGE_SIZE = 5000;
+const KAIA_MAX_PAGES = 4;
+const PIEMONTE_SITE_CONFIG = {
+  bric: { root: "bric", prefix: "PAGZ41_C_PIEM_" },
+  sett: { root: "sett", prefix: "PAGZ42_C_PIEM_" },
+};
+const LOMBARDIA_SITE_CONFIG = {
+  des: { dir: "DES", prefix: "Desio." },
+  fle: { dir: "FLE", prefix: "Flero." },
+};
+const KAIA_SITE_CONFIG = {
+  eehar: { radarFilter: "Harku radar (HAR)" },
+  eesur: { radarFilter: "Sürgavere radar (SUR)" },
+};
+const METEOROMANIA_SITE_IDS = new Set(["BAR", "BOB", "BUC", "CRA", "MED", "ORA", "TIM"]);
 const ORD_COUNTRIES = [
   ["be", "BE", "Belgium"],
   ["ch", "CH", "Switzerland"],
@@ -203,6 +237,41 @@ export const FRAME_PROVIDER_CATALOG = [
     label: "Community GR2A dir.list feeds",
     modes: ["community-live", "community-recent", "custom-url"],
     formats: SUPPORTED_BYTE_FORMATS.map((format) => format.id),
+    clientSide: true,
+  },
+  {
+    id: "international-australia-nci",
+    label: "NCI Australia daily-ZIP ODIM_H5",
+    modes: ["international-live", "international-recent", "archive-date", "custom-url"],
+    formats: ["odim-h5"],
+    clientSide: true,
+  },
+  {
+    id: "international-arpa-piemonte",
+    label: "ARPA Piemonte Italy ODIM_H5",
+    modes: ["international-live", "international-recent", "custom-url"],
+    formats: ["odim-h5"],
+    clientSide: true,
+  },
+  {
+    id: "international-arpa-lombardia",
+    label: "ARPA Lombardia Italy gzip ODIM_H5 merge",
+    modes: ["international-live", "international-recent", "custom-url"],
+    formats: ["odim-h5"],
+    clientSide: true,
+  },
+  {
+    id: "international-kaia",
+    label: "KAIA Estonia ODIM_H5",
+    modes: ["international-live", "international-recent", "custom-url"],
+    formats: ["odim-h5"],
+    clientSide: true,
+  },
+  {
+    id: "international-meteoromania",
+    label: "ANM Romania ODIM_H5 split PVOL",
+    modes: ["international-live", "international-recent", "custom-url"],
+    formats: ["odim-h5"],
     clientSide: true,
   },
   {
@@ -1849,17 +1918,11 @@ export function parseOrdObjectKey(siteId, key) {
 export function ordFramePlansFromKeys(siteId, objectKind, keysOrListing, options = {}) {
   const site = resolveOrdInternationalSite(siteId);
   const kind = validateOrdObjectKind(objectKind);
-  const files = normalizeOrdKeys(keysOrListing)
-    .map((key) => normalizeOrdFile(site.id, key))
-    .filter(Boolean)
-    .filter((file) => file.objectKind === kind)
-    .sort((left, right) => left.timeMs - right.timeMs || left.key.localeCompare(right.key));
+  const files = ordFilesFromKeys(site.id, kind, keysOrListing);
   if (!files.length) throw new Error(`ORD '${site.id}': no parseable ${kind} object keys`);
-  let anchors = [...new Set(files.map((file) => file.timeMs))].sort((left, right) => left - right);
-  if (options.count !== undefined || options.limit !== undefined) {
-    anchors = anchors.slice(-clampInt(options.count ?? options.limit, 1, 1000));
-  }
-  return anchors.map((anchorMs) => ordPlanForAnchor(site, kind, files, anchorMs, options));
+  const plans = ordRecentPlansForFiles(site, kind, files, options);
+  const limit = options.count ?? options.limit;
+  return limit === undefined ? plans : plans.slice(-clampInt(limit, 1, 1000));
 }
 
 export function ordFramePlanFromKeys(siteId, objectKind, keysOrListing, options = {}) {
@@ -2057,8 +2120,669 @@ export async function extractMobileArchiveEntries(bytes, options = {}) {
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
+export function australiaNciSiteListUrl(options = {}) {
+  return options.siteListUrl || `${trimTrailingSlash(options.baseUrl || AUSTRALIA_NCI_BASE_URL)}/radar_site_list.csv`;
+}
+
+export function parseAustraliaNciSiteCsv(csv) {
+  const lines = String(csv || "").split(/\r?\n/).filter((line) => line.trim());
+  if (!lines.length) return [];
+  const headers = parseCsvRecord(lines[0]);
+  const column = (name) => headers.indexOf(name);
+  const columns = {
+    id: column("id"),
+    shortName: column("short_name"),
+    location: column("location"),
+    status: column("status"),
+    lat: column("site_lat"),
+    lon: column("site_lon"),
+    end: column("prechange_end"),
+    notes: column("notes"),
+  };
+  if (Object.values(columns).some((index) => index < 0)) return [];
+  return lines.slice(1).map((line) => {
+    const fields = parseCsvRecord(line);
+    const field = (index) => String(fields[index] || "").trim();
+    const id = field(columns.id);
+    const shortName = field(columns.shortName);
+    const location = field(columns.location);
+    const status = field(columns.status);
+    const lat = Number(field(columns.lat));
+    const lon = Number(field(columns.lon));
+    if (!/^\d+$/.test(id)
+        || !location
+        || !["OK", "CHECK"].includes(status)
+        || field(columns.end) !== "-"
+        || field(columns.notes).toLowerCase().includes("not operational")
+        || !Number.isFinite(lat)
+        || !Number.isFinite(lon)) return null;
+    return {
+      id,
+      siteId: id,
+      label: shortName && shortName !== location ? `${location} / ${shortName} (${id})` : `${location} (${id})`,
+      country: "Australia",
+      lat,
+      lon,
+      status,
+    };
+  }).filter(Boolean).sort((left, right) => Number(left.id) - Number(right.id)).map(cloneCatalogRecord);
+}
+
+export function australiaNciTarlistUrl(siteId, date, options = {}) {
+  const site = resolveAustraliaNciInternationalSite(siteId);
+  const ymd = utcDateParts(date);
+  return `${trimTrailingSlash(options.baseUrl || AUSTRALIA_NCI_BASE_URL)}/${site.id}/${ymd.year}/list/${site.id}_${ymd.compact}_tarlist.txt`;
+}
+
+export function australiaNciDailyZipUrl(siteId, date, options = {}) {
+  const site = resolveAustraliaNciInternationalSite(siteId);
+  const ymd = utcDateParts(date);
+  return `${trimTrailingSlash(options.baseUrl || AUSTRALIA_NCI_BASE_URL)}/${site.id}/${ymd.year}/vol/${site.id}_${ymd.compact}.pvol.zip`;
+}
+
+export function parseAustraliaNciTarlist(siteId, date, text, options = {}) {
+  const site = resolveAustraliaNciInternationalSite(siteId);
+  const ymd = utcDateParts(date);
+  const zipUrl = australiaNciDailyZipUrl(site.id, ymd.iso, options);
+  const frames = [];
+  for (const rawLine of String(text || "").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const fields = parseCsvRecord(line);
+    const fileName = String(fields[0] || "").trim();
+    const rowSite = String(fields[1] || site.id).trim();
+    if (rowSite !== site.id || !fileName.endsWith(".pvol.h5")) continue;
+    const stamp = String(fields[2] || australiaNciStampFromFileName(fileName) || "").trim();
+    if (!/^\d{8}_\d{6}$/.test(stamp) || stamp.slice(0, 8) !== ymd.compact) continue;
+    frames.push({
+      fileName,
+      siteId: site.id,
+      date: ymd.iso,
+      stamp,
+      volumeTime: compactUnderscoreStampToIso(stamp),
+      zipUrl,
+    });
+  }
+  return frames
+    .sort((left, right) => left.stamp.localeCompare(right.stamp) || left.fileName.localeCompare(right.fileName))
+    .filter((frame, index, all) => index === 0 || frame.fileName !== all[index - 1].fileName)
+    .map(cloneCatalogRecord);
+}
+
+export function australiaNciFramePlansFromTarlist(siteId, date, text, options = {}) {
+  const site = resolveAustraliaNciInternationalSite(siteId);
+  let items = parseAustraliaNciTarlist(site.id, date, text, options);
+  const count = options.count ?? options.limit;
+  if (count !== undefined) items = items.slice(-clampInt(count, 1, AUSTRALIA_NCI_MAX_RECENT_FRAMES));
+  return items.map((item) => makeInternationalFramePlan({
+    providerId: "australia-nci",
+    providerLabel: "NCI Australia Radar",
+    site,
+    identity: `australia-nci_${site.id}_${item.fileName}`,
+    parts: [{ url: item.zipUrl, zipMember: item.fileName, preprocessing: "zip-member-range" }],
+    merge: false,
+    format: "odim-h5",
+    volumeTime: item.volumeTime,
+    sourceItem: item,
+  }));
+}
+
+export async function fetchAustraliaNciZipMemberBytes(zipUrl, memberName, options = {}) {
+  const url = String(zipUrl || "").trim();
+  const member = String(memberName || "").replace(/\\/g, "/").trim();
+  if (!url || !member) throw new Error("Australia NCI ZIP extraction requires a ZIP URL and exact member name");
+  const probe = await fetchByteRange(url, 0, 0, options);
+  const totalSize = contentRangeTotal(probe.response);
+  if (!Number.isFinite(totalSize) || totalSize < 22) {
+    throw new Error(`Australia NCI ZIP range probe did not expose a valid Content-Range for ${url}`);
+  }
+  const tailStart = Math.max(0, totalSize - AUSTRALIA_NCI_ZIP_TAIL_BYTES);
+  const tail = await fetchByteRange(url, tailStart, totalSize - 1, options);
+  const eocdOffset = findZipEndOfCentralDirectory(tail.bytes);
+  const entryCount = readUint16(tail.bytes, eocdOffset + 10);
+  const centralSize = readUint32(tail.bytes, eocdOffset + 12);
+  const centralOffset = readUint32(tail.bytes, eocdOffset + 16);
+  if (entryCount === 0xffff || centralSize === 0xffffffff || centralOffset === 0xffffffff) {
+    throw new Error("Australia NCI ZIP64 daily archives are not supported by the range extractor");
+  }
+  let centralBytes;
+  if (centralOffset >= tailStart && centralOffset + centralSize <= tailStart + tail.bytes.byteLength) {
+    centralBytes = tail.bytes.subarray(centralOffset - tailStart, centralOffset - tailStart + centralSize);
+  } else {
+    centralBytes = (await fetchByteRange(url, centralOffset, centralOffset + centralSize - 1, options)).bytes;
+  }
+  const entries = parseZipCentralDirectoryBytes(centralBytes, entryCount, options);
+  const entry = entries.find((candidate) => candidate.name === member);
+  if (!entry) throw new Error(`Australia NCI ZIP '${url}' does not contain member '${member}'`);
+  if (entry.encrypted) throw new Error(`Australia NCI ZIP member '${member}' is encrypted`);
+  const localHeader = (await fetchByteRange(url, entry.localHeaderOffset, entry.localHeaderOffset + 29, options)).bytes;
+  if (readUint32(localHeader, 0) !== 0x04034b50) throw new Error(`Australia NCI ZIP member '${member}' has an invalid local header`);
+  const dataOffset = entry.localHeaderOffset + 30 + readUint16(localHeader, 26) + readUint16(localHeader, 28);
+  const compressed = entry.compressedSize
+    ? (await fetchByteRange(url, dataOffset, dataOffset + entry.compressedSize - 1, options)).bytes
+    : new Uint8Array();
+  let bytes;
+  if (entry.compressionMethod === 0) bytes = compressed;
+  else if (entry.compressionMethod === 8) bytes = await inflateRawDeflate(compressed, member);
+  else throw new Error(`Australia NCI ZIP member '${member}' uses unsupported compression method ${entry.compressionMethod}`);
+  if (entry.uncompressedSize && bytes.byteLength !== entry.uncompressedSize) {
+    throw new Error(`Australia NCI ZIP member '${member}' inflated to ${bytes.byteLength} bytes, expected ${entry.uncompressedSize}`);
+  }
+  return bytes;
+}
+
+export function piemonteSiteListingUrl(siteId, options = {}) {
+  const site = resolvePiemonteInternationalSite(siteId);
+  const config = PIEMONTE_SITE_CONFIG[site.id];
+  return `${trimTrailingSlash(options.baseUrl || ARPA_PIEMONTE_RADAR_ROOT)}/${config.root}/`;
+}
+
+export function parsePiemonteVolumeListing(siteId, textOrEntries) {
+  const site = resolvePiemonteInternationalSite(siteId);
+  const prefix = PIEMONTE_SITE_CONFIG[site.id].prefix;
+  return parseAutoIndexListing(textOrEntries)
+    .filter((entry) => !entry.isDir)
+    .map((entry) => entry.name)
+    .filter((name) => new RegExp(`^${escapeRegex(prefix)}\\d{14}\\.h5$`).test(name))
+    .sort()
+    .map((fileName) => ({ fileName, stamp: fileName.slice(prefix.length, -3), volumeTime: volumeTimeFromInternationalIdentity(fileName) }));
+}
+
+export function piemonteFramePlansFromListing(siteId, textOrEntries, options = {}) {
+  const site = resolvePiemonteInternationalSite(siteId);
+  let files = parsePiemonteVolumeListing(site.id, textOrEntries);
+  const count = options.count ?? options.limit;
+  if (count !== undefined) files = files.slice(-clampInt(count, 1, 1000));
+  const root = piemonteSiteListingUrl(site.id, options);
+  return files.map((file) => makeInternationalFramePlan({
+    providerId: "arpa-piemonte",
+    providerLabel: "ARPA Piemonte Italy",
+    site,
+    identity: file.fileName,
+    parts: [{ url: `${root}${encodeURIComponent(file.fileName)}` }],
+    merge: false,
+    format: "odim-h5",
+    volumeTime: file.volumeTime,
+    sourceItem: file,
+  }));
+}
+
+export function lombardiaSiteListingUrl(siteId, options = {}) {
+  const site = resolveLombardiaInternationalSite(siteId);
+  return `${trimTrailingSlash(options.baseUrl || ARPA_LOMBARDIA_RADAR_ROOT)}/${LOMBARDIA_SITE_CONFIG[site.id].dir}/`;
+}
+
+export function parseLombardiaProductListing(siteId, textOrEntries) {
+  const site = resolveLombardiaInternationalSite(siteId);
+  const prefix = LOMBARDIA_SITE_CONFIG[site.id].prefix;
+  const allowed = new Set([...LOMBARDIA_REQUIRED_PRODUCTS, ...LOMBARDIA_OPTIONAL_PRODUCTS]);
+  return parseAutoIndexListing(textOrEntries)
+    .filter((entry) => !entry.isDir)
+    .map((entry) => {
+      const match = entry.name.match(new RegExp(`^${escapeRegex(prefix)}(\\d{8}T\\d{6}Z)_([A-Za-z0-9]+)\\.h5\\.gz$`));
+      if (!match || !allowed.has(match[2])) return null;
+      return { fileName: entry.name, stamp: match[1], product: match[2], volumeTime: lombardiaStampToIso(match[1]) };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.stamp.localeCompare(right.stamp) || left.product.localeCompare(right.product));
+}
+
+export function lombardiaFramePlansFromListing(siteId, textOrEntries, options = {}) {
+  const site = resolveLombardiaInternationalSite(siteId);
+  const files = parseLombardiaProductListing(site.id, textOrEntries);
+  const byStamp = new Map();
+  for (const file of files) {
+    if (!byStamp.has(file.stamp)) byStamp.set(file.stamp, new Map());
+    byStamp.get(file.stamp).set(file.product, file);
+  }
+  let stamps = [...byStamp.entries()]
+    .filter(([, products]) => LOMBARDIA_REQUIRED_PRODUCTS.every((product) => products.has(product)))
+    .map(([stamp]) => stamp)
+    .sort();
+  const count = options.count ?? options.limit;
+  if (count !== undefined) stamps = stamps.slice(-clampInt(count, 1, 1000));
+  const root = lombardiaSiteListingUrl(site.id, options);
+  return stamps.map((stamp) => {
+    const products = byStamp.get(stamp);
+    const parts = [...LOMBARDIA_REQUIRED_PRODUCTS, ...LOMBARDIA_OPTIONAL_PRODUCTS]
+      .map((product) => products.get(product))
+      .filter(Boolean)
+      .map((file) => ({ url: `${root}${encodeURIComponent(file.fileName)}`, compression: "gzip" }));
+    const identity = `${site.id}_${stamp}_p${parts.length}_h${fnv1a64Hex(parts.map((part) => part.url).join("\n"))}`;
+    return makeInternationalFramePlan({
+      providerId: "arpa-lombardia",
+      providerLabel: "ARPA Lombardia Italy",
+      site,
+      identity,
+      parts,
+      merge: true,
+      format: "odim-h5",
+      volumeTime: lombardiaStampToIso(stamp),
+      sourceItem: { stamp, products: [...products.keys()] },
+    });
+  });
+}
+
+export function kaiaQueryBody(siteId, options = {}) {
+  const site = resolveKaiaInternationalSite(siteId);
+  const since = options.since ? new Date(options.since) : new Date(dateMs(options.now || new Date(), "KAIA now") - KAIA_LOOKBACK_DAYS * 86400_000);
+  if (!Number.isFinite(since.getTime())) throw new Error(`KAIA: invalid since time '${options.since}'`);
+  return {
+    filter: {
+      and: {
+        children: [
+          { isEqual: { field: "Radar", value: KAIA_SITE_CONFIG[site.id].radarFilter } },
+          { isEqual: { field: "Phenomenon", value: "VOL" } },
+          { greaterThanOrEqual: { field: "Timestamp", value: since.toISOString() } },
+        ],
+      },
+    },
+    pageSize: KAIA_PAGE_SIZE,
+    fields: ["Timestamp", "Phenomenon", "Radar", "RMTitle", "RMFileSize"],
+    includeFileMetadata: true,
+    bookmark: options.bookmark ?? null,
+  };
+}
+
+export function parseKaiaQueryResults(siteId, textOrJson) {
+  const site = resolveKaiaInternationalSite(siteId);
+  const page = parseJsonLike(textOrJson, "KAIA query");
+  const entries = [];
+  for (const document of Array.isArray(page.documents) ? page.documents : []) {
+    const timestampText = document?.metadata?.Timestamp;
+    const timestampMs = parseFlexibleRfc3339(timestampText);
+    if (!Number.isFinite(timestampMs)) continue;
+    const files = Array.isArray(document.fileMetadata) ? document.fileMetadata : [];
+    const file = files.find((candidate) => String(candidate?.name || "").endsWith(".h5")) || files[0];
+    if (document.id === undefined || file?.id === undefined) continue;
+    const identity = String(document.metadata?.RMTitle || file.name || `kaia-${document.id}-${file.id}`);
+    entries.push({
+      identity,
+      timestamp: new Date(timestampMs).toISOString(),
+      volumeTime: new Date(timestampMs).toISOString(),
+      url: `${KAIA_FILE_BASE_URL}/items/${encodeURIComponent(document.id)}/files/${encodeURIComponent(file.id)}`,
+      documentId: document.id,
+      fileId: file.id,
+      fileName: file.name || null,
+      siteId: site.id,
+    });
+  }
+  entries.sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp) || left.identity.localeCompare(right.identity));
+  return entries.filter((entry, index, all) => index === 0 || entry.identity !== all[index - 1].identity).map(cloneCatalogRecord);
+}
+
+export function kaiaFramePlansFromQueryResults(siteId, pages, options = {}) {
+  const site = resolveKaiaInternationalSite(siteId);
+  let entries = (Array.isArray(pages) ? pages : [pages]).flatMap((page) => parseKaiaQueryResults(site.id, page));
+  entries.sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp) || left.identity.localeCompare(right.identity));
+  entries = entries.filter((entry, index, all) => index === 0 || entry.identity !== all[index - 1].identity);
+  const count = clampInt((options.count ?? options.limit ?? entries.length) || 1, 1, 1000);
+  return entries.slice(-count).map((entry) => makeInternationalFramePlan({
+    providerId: "kaia",
+    providerLabel: "KAIA Estonia",
+    site,
+    identity: entry.identity,
+    parts: [{ url: entry.url }],
+    merge: false,
+    format: "odim-h5",
+    volumeTime: entry.volumeTime,
+    sourceItem: entry,
+  }));
+}
+
+export function meteoRomaniaSiteListingUrl(siteId, options = {}) {
+  const site = resolveMeteoRomaniaInternationalSite(siteId);
+  return `${trimTrailingSlash(options.baseUrl || METEOROMANIA_RADAR_ROOT)}/${site.id}/`;
+}
+
+export function parseMeteoRomaniaListing(siteId, textOrEntries) {
+  const site = resolveMeteoRomaniaInternationalSite(siteId);
+  const momentAlternation = METEOROMANIA_MOMENT_ORDER.map(escapeRegex).join("|");
+  const pattern = new RegExp(`^${escapeRegex(site.id)}_(\\d{16})(${momentAlternation})\\.hdf$`);
+  return parseAutoIndexListing(textOrEntries)
+    .filter((entry) => !entry.isDir)
+    .map((entry) => {
+      const match = entry.name.match(pattern);
+      return match ? {
+        fileName: entry.name,
+        stamp: match[1],
+        moment: match[2],
+        volumeTime: compactStampToIso(match[1].slice(0, 14)),
+      } : null;
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.stamp.localeCompare(right.stamp) || METEOROMANIA_MOMENT_ORDER.indexOf(left.moment) - METEOROMANIA_MOMENT_ORDER.indexOf(right.moment));
+}
+
+export function meteoRomaniaFramePlansFromListing(siteId, textOrEntries, options = {}) {
+  const site = resolveMeteoRomaniaInternationalSite(siteId);
+  const files = parseMeteoRomaniaListing(site.id, textOrEntries);
+  const byStamp = new Map();
+  for (const file of files) {
+    if (!byStamp.has(file.stamp)) byStamp.set(file.stamp, new Map());
+    byStamp.get(file.stamp).set(file.moment, file);
+  }
+  const complete = [...byStamp.entries()]
+    .filter(([, moments]) => moments.has("dBZ") && moments.has("V"))
+    .map(([stamp]) => stamp)
+    .sort((left, right) => right.localeCompare(left));
+  const nowMs = dateMs(options.now || new Date(), "ANM now");
+  const settled = complete.filter((stamp) => nowMs - compactStampMs(stamp.slice(0, 14)) >= METEOROMANIA_STAMP_SETTLE_MINUTES * 60_000);
+  const count = clampInt(options.count ?? options.limit ?? 1, 1, 1000);
+  const selectedNewestFirst = (settled.length ? settled : complete).slice(0, count);
+  const root = meteoRomaniaSiteListingUrl(site.id, options);
+  return selectedNewestFirst.reverse().map((stamp) => {
+    const moments = byStamp.get(stamp);
+    const parts = METEOROMANIA_MOMENT_ORDER
+      .map((moment) => moments.get(moment))
+      .filter(Boolean)
+      .map((file) => ({ url: `${root}${encodeURIComponent(file.fileName)}` }));
+    return makeInternationalFramePlan({
+      providerId: "meteoromania",
+      providerLabel: "ANM Romania",
+      site,
+      identity: `${site.id}_${stamp}_p${parts.length}_h${fnv1a64Hex(parts.map((part) => part.url).join("\n"))}`,
+      parts,
+      merge: true,
+      format: "odim-h5",
+      volumeTime: compactStampToIso(stamp.slice(0, 14)),
+      sourceItem: { stamp, moments: METEOROMANIA_MOMENT_ORDER.filter((moment) => moments.has(moment)) },
+    });
+  });
+}
+
+function parseCsvRecord(line) {
+  const fields = [];
+  let field = "";
+  let quoted = false;
+  const text = String(line || "");
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === '"') {
+      if (quoted && text[index + 1] === '"') {
+        field += '"';
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (char === "," && !quoted) {
+      fields.push(field.trim());
+      field = "";
+    } else {
+      field += char;
+    }
+  }
+  fields.push(field.trim());
+  return fields;
+}
+
+function utcDateParts(value) {
+  const raw = String(value || "").trim();
+  let date;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) date = new Date(`${raw}T00:00:00Z`);
+  else if (/^\d{8}$/.test(raw)) date = new Date(`${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}T00:00:00Z`);
+  else date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+  if (!Number.isFinite(date.getTime())) throw new Error(`invalid UTC date '${value}'`);
+  const year = String(date.getUTCFullYear());
+  const month = pad2(date.getUTCMonth() + 1);
+  const day = pad2(date.getUTCDate());
+  return { year, month, day, compact: `${year}${month}${day}`, iso: `${year}-${month}-${day}` };
+}
+
+function australiaNciStampFromFileName(fileName) {
+  return String(fileName || "").match(/^\d+_(\d{8}_\d{6})\.pvol\.h5$/)?.[1] || null;
+}
+
+function compactUnderscoreStampToIso(stamp) {
+  return compactStampToIso(String(stamp || "").replace("_", ""));
+}
+
+function compactStampMs(stamp) {
+  const value = String(stamp || "");
+  if (!/^\d{14}$/.test(value)) return NaN;
+  return Date.UTC(
+    Number(value.slice(0, 4)),
+    Number(value.slice(4, 6)) - 1,
+    Number(value.slice(6, 8)),
+    Number(value.slice(8, 10)),
+    Number(value.slice(10, 12)),
+    Number(value.slice(12, 14)),
+  );
+}
+
+function compactStampToIso(stamp) {
+  const timeMs = compactStampMs(stamp);
+  return Number.isFinite(timeMs) ? new Date(timeMs).toISOString() : null;
+}
+
+function lombardiaStampToIso(stamp) {
+  const match = String(stamp || "").match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/);
+  return match ? `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}Z` : null;
+}
+
+function parseFlexibleRfc3339(value) {
+  const normalized = String(value || "").replace(/\.(\d{3})\d+(?=Z|[+-]\d{2}:?\d{2}$)/, ".$1");
+  return Date.parse(normalized);
+}
+
+function escapeRegex(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function fetchByteRange(url, start, end, options = {}) {
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start) {
+    throw new Error(`invalid byte range ${start}-${end}`);
+  }
+  const fetcher = options.fetch || globalThis.fetch;
+  if (typeof fetcher !== "function") throw new Error("fetch is not available in this environment");
+  const baseInit = options.fetchOptions || {};
+  const headers = typeof Headers === "function" ? new Headers(baseInit.headers || {}) : { ...(baseInit.headers || {}) };
+  if (typeof headers.set === "function") headers.set("Range", `bytes=${start}-${end}`);
+  else headers.Range = `bytes=${start}-${end}`;
+  const response = await fetcher(url, {
+    ...baseInit,
+    method: "GET",
+    headers,
+    cache: options.cache ?? "no-store",
+    signal: options.signal || baseInit.signal,
+  });
+  if (!response?.ok) throw new Error(`${response?.status || 0} ${response?.statusText || "range fetch failed"}: ${url}`);
+  return { response, bytes: new Uint8Array(await response.arrayBuffer()) };
+}
+
+function contentRangeTotal(response) {
+  const headers = response?.headers;
+  const value = typeof headers?.get === "function"
+    ? headers.get("content-range")
+    : headers?.["content-range"] || headers?.["Content-Range"];
+  const match = String(value || "").match(/^bytes\s+\d+-\d+\/(\d+)$/i);
+  return match ? Number(match[1]) : NaN;
+}
+
+function parseZipCentralDirectoryBytes(bytes, expectedEntries, options = {}) {
+  const view = normalizeByteInput(bytes);
+  const decoder = new TextDecoder(options.encoding || "utf-8");
+  const entries = [];
+  let offset = 0;
+  while (offset < view.byteLength && entries.length < expectedEntries) {
+    if (readUint32(view, offset) !== 0x02014b50) throw new Error(`invalid ZIP central directory entry at ${offset}`);
+    const flags = readUint16(view, offset + 8);
+    const compressionMethod = readUint16(view, offset + 10);
+    const lastModifiedTime = readUint16(view, offset + 12);
+    const lastModifiedDate = readUint16(view, offset + 14);
+    const crc32 = readUint32(view, offset + 16);
+    const compressedSize = readUint32(view, offset + 20);
+    const uncompressedSize = readUint32(view, offset + 24);
+    const nameLength = readUint16(view, offset + 28);
+    const extraLength = readUint16(view, offset + 30);
+    const commentLength = readUint16(view, offset + 32);
+    const localHeaderOffset = readUint32(view, offset + 42);
+    if (compressedSize === 0xffffffff || uncompressedSize === 0xffffffff || localHeaderOffset === 0xffffffff) {
+      throw new Error("ZIP64 range members are not supported in the browser helper yet");
+    }
+    const name = decoder.decode(view.subarray(offset + 46, offset + 46 + nameLength)).replace(/\\/g, "/");
+    entries.push({
+      type: "bowecho-zip-entry-v1",
+      name,
+      fileName: name.split("/").filter(Boolean).pop() || name,
+      directory: name.endsWith("/"),
+      compressionMethod,
+      encrypted: Boolean(flags & 0x0001),
+      compressedSize,
+      uncompressedSize,
+      crc32: crc32 >>> 0,
+      localHeaderOffset,
+      lastModified: dosDateTimeToIso(lastModifiedDate, lastModifiedTime),
+    });
+    offset += 46 + nameLength + extraLength + commentLength;
+  }
+  if (entries.length !== expectedEntries) {
+    throw new Error(`ZIP central directory listed ${entries.length} entries, expected ${expectedEntries}`);
+  }
+  return entries;
+}
+
+async function latestAustraliaNciFramePlan(siteId, options = {}) {
+  const plans = await fetchAustraliaNciRecentPlans(siteId, 1, AUSTRALIA_NCI_LATEST_LOOKBACK_DAYS, options);
+  return plans[plans.length - 1];
+}
+
+async function recentAustraliaNciFramePlans(siteId, count, options = {}) {
+  return fetchAustraliaNciRecentPlans(siteId, clampInt(count, 1, AUSTRALIA_NCI_MAX_RECENT_FRAMES), AUSTRALIA_NCI_RECENT_LOOKBACK_DAYS, options);
+}
+
+async function fetchAustraliaNciRecentPlans(siteId, count, lookbackDays, options = {}) {
+  const site = resolveAustraliaNciInternationalSite(siteId);
+  const nowMs = dateMs(options.now || new Date(), "Australia NCI now");
+  const plans = [];
+  const errors = [];
+  for (let offset = 0; offset < lookbackDays; offset += 1) {
+    const date = utcDateParts(new Date(nowMs - offset * 86400_000)).iso;
+    try {
+      const fixture = options.tarlistsByDate?.[date] ?? options.tarlistByDate?.[date];
+      let text;
+      if (fixture !== undefined) {
+        text = String(fixture || "");
+      } else {
+        const result = await fetchTextMaybe(australiaNciTarlistUrl(site.id, date, options), options);
+        if (!result.ok) continue;
+        text = result.text;
+      }
+      plans.push(...australiaNciFramePlansFromTarlist(site.id, date, text, options));
+      const deduped = sortDedupeInternationalPlans(plans);
+      plans.length = 0;
+      plans.push(...deduped);
+      if (plans.length >= count) break;
+    } catch (error) {
+      errors.push(error);
+      if (options.strict === true) throw error;
+    }
+  }
+  if (!plans.length) {
+    const suffix = errors.length ? ` (${errors.map((error) => error.message || error).join("; ")})` : "";
+    throw new Error(`Australia NCI: no tarlist frames for site ${site.id} in the last ${lookbackDays} UTC days${suffix}`);
+  }
+  return sortDedupeInternationalPlans(plans).slice(-count);
+}
+
+async function latestPiemonteFramePlan(siteId, options = {}) {
+  const plans = await recentPiemonteFramePlans(siteId, 1, options);
+  return plans[plans.length - 1];
+}
+
+async function recentPiemonteFramePlans(siteId, count, options = {}) {
+  const site = resolvePiemonteInternationalSite(siteId);
+  const text = options.listing ?? await fetchText(piemonteSiteListingUrl(site.id, options), options);
+  const plans = piemonteFramePlansFromListing(site.id, text, { ...options, count });
+  if (!plans.length) {
+    throw new Error(`ARPA Piemonte ${site.label} listing returned no full ${PIEMONTE_SITE_CONFIG[site.id].prefix}YYYYMMDDHHMMSS.h5 volumes`);
+  }
+  return plans;
+}
+
+async function latestLombardiaFramePlan(siteId, options = {}) {
+  const plans = await recentLombardiaFramePlans(siteId, 1, options);
+  return plans[plans.length - 1];
+}
+
+async function recentLombardiaFramePlans(siteId, count, options = {}) {
+  const site = resolveLombardiaInternationalSite(siteId);
+  const text = options.listing ?? await fetchText(lombardiaSiteListingUrl(site.id, options), options);
+  const plans = lombardiaFramePlansFromListing(site.id, text, { ...options, count });
+  if (!plans.length) throw new Error(`ARPA Lombardia ${site.label} listing had no timestamp common to DBZH and VRADH`);
+  return plans;
+}
+
+async function latestKaiaFramePlan(siteId, options = {}) {
+  const plans = await recentKaiaFramePlans(siteId, 1, options);
+  return plans[plans.length - 1];
+}
+
+async function recentKaiaFramePlans(siteId, count, options = {}) {
+  const site = resolveKaiaInternationalSite(siteId);
+  if (options.pages || options.queryResults) {
+    const plans = kaiaFramePlansFromQueryResults(site.id, options.pages || options.queryResults, { ...options, count });
+    if (!plans.length) throw new Error(`KAIA returned no recent VOL files for ${site.id}`);
+    return plans;
+  }
+  const pages = [];
+  let bookmark = null;
+  for (let pageIndex = 0; pageIndex < KAIA_MAX_PAGES; pageIndex += 1) {
+    const body = kaiaQueryBody(site.id, { ...options, bookmark });
+    const headers = { "Content-Type": "application/json", ...(options.fetchOptions?.headers || {}) };
+    const text = await fetchText(options.queryUrl || KAIA_QUERY_URL, {
+      ...options,
+      fetchOptions: {
+        ...(options.fetchOptions || {}),
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      },
+    });
+    const page = parseJsonLike(text, "KAIA query");
+    pages.push(page);
+    const next = page.nextBookmark;
+    if (!next || next === "*" || next === bookmark) break;
+    bookmark = next;
+  }
+  const plans = kaiaFramePlansFromQueryResults(site.id, pages, { ...options, count });
+  if (!plans.length) throw new Error(`KAIA returned no recent VOL files for ${site.id}`);
+  return plans;
+}
+
+async function latestMeteoRomaniaFramePlan(siteId, options = {}) {
+  const plans = await recentMeteoRomaniaFramePlans(siteId, 1, options);
+  return plans[plans.length - 1];
+}
+
+async function recentMeteoRomaniaFramePlans(siteId, count, options = {}) {
+  const site = resolveMeteoRomaniaInternationalSite(siteId);
+  const text = options.listing ?? await fetchText(meteoRomaniaSiteListingUrl(site.id, options), options);
+  const plans = meteoRomaniaFramePlansFromListing(site.id, text, { ...options, count });
+  if (!plans.length) throw new Error(`ANM site '${site.id}': no timestamp with both dBZ and V`);
+  return plans;
+}
+
+function sortDedupeInternationalPlans(plans) {
+  const sorted = [...plans].sort((left, right) =>
+    dateMs(left.volumeTime || 0, "international plan time") - dateMs(right.volumeTime || 0, "international plan time")
+    || left.identity.localeCompare(right.identity)
+  );
+  const seen = new Set();
+  return sorted.filter((plan) => {
+    if (seen.has(plan.identity)) return false;
+    seen.add(plan.identity);
+    return true;
+  });
+}
+
 export async function latestInternationalFramePlan(providerId, siteId, options = {}) {
   const provider = normalizeInternationalProviderId(providerId);
+  if (provider === "australia-nci") return latestAustraliaNciFramePlan(siteId, options);
+  if (provider === "arpa-piemonte") return latestPiemonteFramePlan(siteId, options);
+  if (provider === "arpa-lombardia") return latestLombardiaFramePlan(siteId, options);
+  if (provider === "kaia") return latestKaiaFramePlan(siteId, options);
+  if (provider === "meteoromania") return latestMeteoRomaniaFramePlan(siteId, options);
   if (provider === "smhi") return latestSmhiFramePlan(siteId, options);
   if (provider === "geosphere") return latestGeosphereFramePlan(siteId, options);
   if (provider === "shmu") return latestShmuFramePlan(siteId, options);
@@ -2085,6 +2809,11 @@ export async function recentInternationalFramePlans(providerId, siteId, countOrO
     200,
   );
   const provider = normalizeInternationalProviderId(providerId);
+  if (provider === "australia-nci") return recentAustraliaNciFramePlans(siteId, count, options);
+  if (provider === "arpa-piemonte") return recentPiemonteFramePlans(siteId, count, options);
+  if (provider === "arpa-lombardia") return recentLombardiaFramePlans(siteId, count, options);
+  if (provider === "kaia") return recentKaiaFramePlans(siteId, count, options);
+  if (provider === "meteoromania") return recentMeteoRomaniaFramePlans(siteId, count, options);
   if (provider === "smhi") return recentSmhiFramePlans(siteId, count, options);
   if (provider === "geosphere") return recentGeosphereFramePlans(siteId, count, options);
   if (provider === "shmu") return recentShmuFramePlans(siteId, count, options);
@@ -2105,7 +2834,8 @@ export function internationalFrameFromPlan(planOrOptions, options = {}) {
   const plan = normalizeInternationalFramePlan(planOrOptions);
   const site = normalizeInternationalSiteDescriptor(options.site || plan.site);
   const transformUrl = typeof options.urlTransform === "function" ? options.urlTransform : (url) => url;
-  const sourceUrls = plan.parts.map((part) => transformUrl(part.url));
+  const sourceParts = plan.parts.map((part) => ({ ...cloneCatalogRecord(part), url: transformUrl(part.url) }));
+  const sourceUrls = sourceParts.map((part) => part.url);
   const firstPart = plan.parts[0];
   if (!firstPart?.url) throw new Error("internationalFrameFromPlan requires at least one URL part");
   const id = options.id || `${plan.providerId}-${site.id}-${plan.identity}`;
@@ -2119,6 +2849,7 @@ export function internationalFrameFromPlan(planOrOptions, options = {}) {
     complete: true,
     url: plan.merge ? undefined : sourceUrls[0],
     urls: plan.merge ? sourceUrls : undefined,
+    parts: sourceParts,
     merge: Boolean(plan.merge),
     volumeTime: options.volumeTime || plan.volumeTime || volumeTimeFromInternationalIdentity(plan.identity) || null,
     site: site.id,
@@ -3770,6 +4501,82 @@ export class BowEchoRadarToolbox {
     return internationalRadarSite(providerOrSite, siteId);
   }
 
+  australiaNciSiteListUrl(options = {}) {
+    return australiaNciSiteListUrl(options);
+  }
+
+  parseAustraliaNciSiteCsv(csv) {
+    return parseAustraliaNciSiteCsv(csv);
+  }
+
+  australiaNciTarlistUrl(siteId, date, options = {}) {
+    return australiaNciTarlistUrl(siteId, date, options);
+  }
+
+  australiaNciDailyZipUrl(siteId, date, options = {}) {
+    return australiaNciDailyZipUrl(siteId, date, options);
+  }
+
+  parseAustraliaNciTarlist(siteId, date, text, options = {}) {
+    return parseAustraliaNciTarlist(siteId, date, text, options);
+  }
+
+  australiaNciFramePlansFromTarlist(siteId, date, text, options = {}) {
+    return australiaNciFramePlansFromTarlist(siteId, date, text, options);
+  }
+
+  fetchAustraliaNciZipMemberBytes(zipUrl, memberName, options = {}) {
+    return fetchAustraliaNciZipMemberBytes(zipUrl, memberName, options);
+  }
+
+  piemonteSiteListingUrl(siteId, options = {}) {
+    return piemonteSiteListingUrl(siteId, options);
+  }
+
+  parsePiemonteVolumeListing(siteId, textOrEntries) {
+    return parsePiemonteVolumeListing(siteId, textOrEntries);
+  }
+
+  piemonteFramePlansFromListing(siteId, textOrEntries, options = {}) {
+    return piemonteFramePlansFromListing(siteId, textOrEntries, options);
+  }
+
+  lombardiaSiteListingUrl(siteId, options = {}) {
+    return lombardiaSiteListingUrl(siteId, options);
+  }
+
+  parseLombardiaProductListing(siteId, textOrEntries) {
+    return parseLombardiaProductListing(siteId, textOrEntries);
+  }
+
+  lombardiaFramePlansFromListing(siteId, textOrEntries, options = {}) {
+    return lombardiaFramePlansFromListing(siteId, textOrEntries, options);
+  }
+
+  kaiaQueryBody(siteId, options = {}) {
+    return kaiaQueryBody(siteId, options);
+  }
+
+  parseKaiaQueryResults(siteId, textOrJson) {
+    return parseKaiaQueryResults(siteId, textOrJson);
+  }
+
+  kaiaFramePlansFromQueryResults(siteId, pages, options = {}) {
+    return kaiaFramePlansFromQueryResults(siteId, pages, options);
+  }
+
+  meteoRomaniaSiteListingUrl(siteId, options = {}) {
+    return meteoRomaniaSiteListingUrl(siteId, options);
+  }
+
+  parseMeteoRomaniaListing(siteId, textOrEntries) {
+    return parseMeteoRomaniaListing(siteId, textOrEntries);
+  }
+
+  meteoRomaniaFramePlansFromListing(siteId, textOrEntries, options = {}) {
+    return meteoRomaniaFramePlansFromListing(siteId, textOrEntries, options);
+  }
+
   smhiAreaCatalogUrl(options = {}) {
     return smhiAreaCatalogUrl(options);
   }
@@ -4742,8 +5549,12 @@ export class BowEchoRadarToolbox {
 
   async loadCommunityLoop(feedOrId, options = {}) {
     const frameCount = clampInt(options.frameCount ?? options.count ?? 6, 1, 200);
-    const frames = await recentCommunityFrames(feedOrId, frameCount, options);
+    let frames = await recentCommunityFrames(feedOrId, frameCount, options);
     if (!frames.length) throw new Error("loadCommunityLoop requires at least one planned frame");
+    if (typeof options.urlTransform === "function") {
+      frames = frames.map((frame) => ({ ...frame, url: frame.url ? options.urlTransform(frame.url) : frame.url }));
+    }
+    if (options.prefetchBytes) frames = await prefetchFrameSourceBytes(frames, options.fetch, options);
     const loop = await this.loadImportedLoop(frames, {
       ...options,
       mode: options.mode || "community",
@@ -4823,7 +5634,7 @@ export class BowEchoRadarToolbox {
     const meta = await this.frameMetadata(metaFrame, product);
     const cut = resolveCut(meta, options.cut ?? loop.cut);
     const renderedFrames = await this.renderFrames(loop.frames, { ...loop.renderOptions, ...options, product, cut });
-    return makeLoop({
+    return inheritRadarLoopContext(makeLoop({
       site: loop.site,
       mode: loop.mode,
       product,
@@ -4832,7 +5643,7 @@ export class BowEchoRadarToolbox {
       renderedFrames,
       meta,
       renderOptions: cleanRenderOptions({ ...loop.renderOptions, ...options, product, cut }),
-    });
+    }), loop);
   }
 
   async pollLive(loop, options = {}) {
@@ -4876,7 +5687,9 @@ export class BowEchoRadarToolbox {
     const lastFrame = loop?.frames?.[loop.frames.length - 1] || {};
     const feedRef = options.feed || options.feedId || loop?.communityFeed || lastFrame.feed || lastFrame.feedId;
     if (!feedRef) throw new Error("pollCommunityLive requires a community feed or a loop loaded by loadCommunityLoop");
-    const latest = await latestCommunityFrame(feedRef, options);
+    let latest = await latestCommunityFrame(feedRef, options);
+    if (typeof options.urlTransform === "function") latest = { ...latest, url: latest.url ? options.urlTransform(latest.url) : latest.url };
+    if (options.prefetchBytes) [latest] = await prefetchFrameSourceBytes([latest], options.fetch, options);
     const existingIndex = loop.frames.findIndex((frame) => frame.cacheKey === latest.cacheKey || frame.identity === latest.identity);
     if (existingIndex >= 0) return { status: "idle", frame: latest, loop };
 
@@ -5835,17 +6648,23 @@ export class RadarSession {
 }
 
 const INTERNATIONAL_PROVIDER_COUNTRY_CODES = {
+  "arpa-lombardia": "IT",
+  "arpa-piemonte": "IT",
+  "australia-nci": "AU",
   chmi: "CZ",
   dmi: "DK",
   dwd: "DE",
   fmi: "FI",
   geosphere: "AT",
   jma: "JP",
+  kaia: "EE",
+  meteoromania: "RO",
   shmu: "SK",
   smhi: "SE",
 };
 
 const COUNTRY_NAME_CODES = {
+  australia: "AU",
   austria: "AT",
   belgium: "BE",
   croatia: "HR",
@@ -5857,6 +6676,7 @@ const COUNTRY_NAME_CODES = {
   germany: "DE",
   iceland: "IS",
   ireland: "IE",
+  italy: "IT",
   japan: "JP",
   lithuania: "LT",
   malta: "MT",
@@ -5876,6 +6696,9 @@ const NEXRAD_COUNTRY_OVERRIDES = {
   RKSG: { country: "South Korea", countryCode: "KR" },
   RODN: { country: "Japan", countryCode: "JP" },
 };
+
+const ORD_NATIVE_FALLBACK_SITE_IDS = new Set(["eesur", "robar", "robob", "robuc", "rocra", "romed", "roora", "rotim"]);
+const PREFETCH_PREPROCESS_PROVIDER_IDS = new Set(["australia-nci", "arpa-lombardia"]);
 
 function normalizeLogicalRadarSiteId(value) {
   const raw = typeof value === "object" ? value?.id : value;
@@ -5920,6 +6743,9 @@ function normalizedSourceBinding(binding, defaults = {}) {
     siteFilteredDecode: Boolean(binding.siteFilteredDecode ?? defaults.siteFilteredDecode),
     live: Boolean(binding.live ?? defaults.live ?? true),
     archive: Boolean(binding.archive ?? defaults.archive ?? false),
+    maxAgeMinutes: Number.isFinite(Number(binding.maxAgeMinutes ?? defaults.maxAgeMinutes))
+      ? Number(binding.maxAgeMinutes ?? defaults.maxAgeMinutes)
+      : null,
     attribution: binding.attribution || defaults.attribution || null,
     fetch: typeof binding.fetch === "function" ? binding.fetch : defaults.fetch,
     load: typeof binding.load === "function" ? binding.load : defaults.load,
@@ -5963,11 +6789,13 @@ function addLogicalSiteBinding(byId, descriptor, binding) {
     countryCode: String(descriptor.countryCode || id.split(":", 1)[0] || "XX").toUpperCase(),
     lat,
     lon,
-    dataClass: "polar-volume",
+    dataClass: String(descriptor.dataClass || "polar-volume").trim().toLowerCase(),
     formats: [],
     capabilities: {
       live: false,
       archive: false,
+      realtime: false,
+      archiveDelayed: false,
       clientSide: true,
       failover: false,
     },
@@ -5977,6 +6805,8 @@ function addLogicalSiteBinding(byId, descriptor, binding) {
   if (binding.format && !site.formats.includes(binding.format)) site.formats.push(binding.format);
   site.capabilities.live ||= binding.live;
   site.capabilities.archive ||= binding.archive;
+  site.capabilities.realtime ||= binding.live && binding.metadata?.availability !== "archive-delayed";
+  site.capabilities.archiveDelayed ||= binding.metadata?.availability === "archive-delayed";
   site.capabilities.failover = site.sources.length > 1;
   site.sources.sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id));
   site.formats.sort();
@@ -6013,11 +6843,15 @@ function buildLogicalRadarCatalog(options = {}) {
     }
   }
   if (options.includeInternational !== false) {
-    const relayRequiredProviders = new Set(["chmi", "dmi", "dwd", "geosphere", "jma", "ord", "shmu"]);
+    const relayRequiredProviders = new Set([
+      "arpa-lombardia", "arpa-piemonte", "australia-nci", "chmi", "dmi", "dwd",
+      "geosphere", "jma", "meteoromania", "ord", "shmu",
+    ]);
     for (const site of INTERNATIONAL_RADAR_SITES) {
       const countryCode = internationalCountryCode(site);
       const logicalId = normalizeLogicalRadarSiteId(site.logicalSiteId || `${countryCode}:${site.id}`);
       const provider = findInternationalRadarProvider(site.providerId);
+      const ordNativeFallback = site.providerId === "ord" && ORD_NATIVE_FALLBACK_SITE_IDS.has(String(site.id).toLowerCase());
       addLogicalSiteBinding(byId, {
         id: logicalId,
         label: site.label,
@@ -6031,15 +6865,52 @@ function buildLogicalRadarCatalog(options = {}) {
         providerSiteId: site.id,
         source: "international",
         planner: "international",
-        role: "preferred",
-        priority: 100,
+        role: site.role || (ordNativeFallback ? "fallback" : "preferred"),
+        priority: site.priority ?? 100,
         format: site.format,
-        access: relayRequiredProviders.has(site.providerId) ? "relay-required" : "either",
+        access: site.access || (relayRequiredProviders.has(site.providerId) ? "relay-required" : "either"),
         merge: site.merge,
         siteFilteredDecode: site.siteFilteredDecode,
         live: Boolean(provider?.capabilities?.livePolling ?? provider?.capabilities?.latestPlan),
         archive: Boolean(provider?.capabilities?.archive),
+        maxAgeMinutes: site.providerId === "australia-nci" ? AUSTRALIA_NCI_MAX_STALE_MINUTES : null,
         attribution: provider?.label || site.providerId,
+        metadata: {
+          availability: site.availability || (provider?.capabilities?.archiveDelayed ? "archive-delayed" : "live"),
+          typicalDelayDays: provider?.capabilities?.typicalDelayDays ?? null,
+        },
+      }));
+    }
+  }
+  if (options.includeCommunity !== false) {
+    for (const feed of COMMUNITY_RADAR_FEEDS) {
+      // Laredo is currently HTTP-only and cannot be fetched safely from an
+      // HTTPS browser app. Keep it in the raw source catalog, but do not
+      // advertise it as a selectable UniversalRadarClient site.
+      if (feed.id === "LARE") continue;
+      addLogicalSiteBinding(byId, {
+        id: `US:${feed.id}`,
+        label: feed.label,
+        country: "United States",
+        countryCode: "US",
+        lat: feed.lat,
+        lon: feed.lon,
+      }, normalizedSourceBinding({
+        id: `community-gr2a:${feed.id}`,
+        providerId: "community-gr2a",
+        providerSiteId: feed.id,
+        source: "community",
+        planner: "community",
+        role: "preferred",
+        priority: 100,
+        format: "nexrad-level2",
+        // The current IEM and North Dakota directory endpoints do not expose
+        // browser CORS headers, so community browser loads must use the relay.
+        access: "relay-required",
+        live: true,
+        archive: false,
+        attribution: "Community GR2A Level II feeds",
+        metadata: { pollUrl: feed.pollUrl, state: feed.state || null, cluster: feed.cluster || null },
       }));
     }
   }
@@ -6057,12 +6928,16 @@ function buildLogicalRadarCatalog(options = {}) {
   const query = normalizeQuery(options.query);
   const countries = normalizeStringSet(options.country || options.countries);
   const providers = normalizeStringSet(options.providerId || options.providerIds || options.providers);
+  const sourceKinds = options.source === undefined && options.sources === undefined
+    ? null
+    : normalizeSources(options.source ?? options.sources);
   const dataClass = String(options.dataClass || "").trim().toLowerCase();
   const live = options.live;
   return [...byId.values()]
     .filter((site) => !query || `${site.id} ${site.label} ${site.country}`.toUpperCase().includes(query))
     .filter((site) => !countries.size || countries.has(site.countryCode) || countries.has(String(site.country).toUpperCase()))
     .filter((site) => !providers.size || site.sources.some((source) => providers.has(String(source.providerId).toUpperCase())))
+    .filter((site) => !sourceKinds || site.sources.some((source) => sourceKinds.has(String(source.source).toLowerCase())))
     .filter((site) => !dataClass || site.dataClass === dataClass)
     .filter((site) => live === undefined || site.capabilities.live === Boolean(live))
     .sort((left, right) => left.countryCode.localeCompare(right.countryCode) || left.id.localeCompare(right.id));
@@ -6089,6 +6964,7 @@ function isTransportIndependentRadarFailure(error) {
   const message = String(error?.message || error).trim();
   return /^no (?:archive )?frames for\b/i.test(message)
     || /^source returned (?:an empty radar loop|an incomplete radar volume)\b/i.test(message)
+    || /\bsource latest volume is stale\b/i.test(message)
     || /\bhas no displayable cuts\b/i.test(message);
 }
 
@@ -6097,13 +6973,30 @@ async function prefetchFrameSourceBytes(frames, fetchImpl, options = {}) {
   const concurrency = clampInt(options.prefetchConcurrency ?? 4, 1, 8);
   return mapLimit(frames, concurrency, async (frame) => {
     if (frame.bytes || frame.byteParts) return frame;
-    if (frame.merge && frame.urls?.length) {
-      const byteParts = await mapLimit(frame.urls, Math.min(8, concurrency), (url) => fetchFrameBytes(url, fetchImpl, options));
+    const parts = Array.isArray(frame.parts) && frame.parts.length
+      ? frame.parts
+      : frame.merge && frame.urls?.length
+        ? frame.urls.map((url) => ({ url }))
+        : frame.url
+          ? [{ url: frame.url }]
+          : [];
+    if (frame.merge && parts.length) {
+      const byteParts = await mapLimit(parts, Math.min(8, concurrency), (part) => fetchInternationalPartBytes(part, fetchImpl, options));
       return { ...frame, byteParts };
     }
-    if (frame.url) return { ...frame, bytes: await fetchFrameBytes(frame.url, fetchImpl, options) };
+    if (parts.length) return { ...frame, bytes: await fetchInternationalPartBytes(parts[0], fetchImpl, options) };
     return frame;
   });
+}
+
+async function fetchInternationalPartBytes(part, fetchImpl, options = {}) {
+  const descriptor = typeof part === "string" ? { url: part } : (part || {});
+  if (descriptor.preprocessing === "zip-member-range" || descriptor.zipMember) {
+    return fetchAustraliaNciZipMemberBytes(descriptor.url, descriptor.zipMember, { ...options, fetch: fetchImpl });
+  }
+  const bytes = await fetchFrameBytes(descriptor.url, fetchImpl, options);
+  if (descriptor.compression === "gzip") return decompressGzipBytes(bytes, descriptor.url);
+  return bytes;
 }
 
 async function fetchFrameBytes(url, fetchImpl, options = {}) {
@@ -6144,6 +7037,18 @@ function validateUniversalLoop(loop, options = {}) {
   return loop;
 }
 
+function sourceAwareMaxAgeMinutes(binding, requested) {
+  const sourceLimit = binding?.maxAgeMinutes === null || binding?.maxAgeMinutes === undefined
+    ? NaN
+    : Number(binding.maxAgeMinutes);
+  const requestedLimit = requested === null || requested === false || requested === undefined
+    ? NaN
+    : Number(requested);
+  if (Number.isFinite(sourceLimit) && Number.isFinite(requestedLimit)) return Math.max(sourceLimit, requestedLimit);
+  if (Number.isFinite(sourceLimit)) return sourceLimit;
+  return requested;
+}
+
 function attachUniversalProvenance(loop, site, binding, transport, attempts, selectedAt) {
   const provenance = {
     type: "bowecho-radar-provenance-v1",
@@ -6160,6 +7065,46 @@ function attachUniversalProvenance(loop, site, binding, transport, attempts, sel
   loop.sourceBinding = cloneCatalogRecord(binding);
   loop.provenance = provenance;
   return provenance;
+}
+
+export class RadarSourceResolutionError extends Error {
+  constructor(site, attempts = []) {
+    const failures = attempts.map((attempt) => `${attempt.sourceId} (${attempt.error || attempt.status})`).join("; ");
+    super(`all radar sources failed for '${site.id}'${failures ? `: ${failures}` : ""}`);
+    this.name = "RadarSourceResolutionError";
+    this.code = "RADAR_SOURCE_RESOLUTION_FAILED";
+    this.site = cloneLogicalRadarSite(site);
+    this.attempts = attempts.map((attempt) => ({ ...attempt }));
+  }
+}
+
+export function isRadarSourceResolutionError(error) {
+  return error instanceof RadarSourceResolutionError
+    || Boolean(error && error.name === "RadarSourceResolutionError" && Array.isArray(error.attempts));
+}
+
+function logicalRadarSiteFeature(site) {
+  return {
+    type: "Feature",
+    id: site.id,
+    geometry: { type: "Point", coordinates: [site.lon, site.lat] },
+    properties: {
+      id: site.id,
+      label: site.label,
+      name: site.name,
+      country: site.country,
+      countryCode: site.countryCode,
+      dataClass: site.dataClass,
+      live: Boolean(site.capabilities.live),
+      realtime: Boolean(site.capabilities.realtime),
+      archive: Boolean(site.capabilities.archive),
+      archiveDelayed: Boolean(site.capabilities.archiveDelayed),
+      failover: Boolean(site.capabilities.failover),
+      sourceCount: site.sources.length,
+      sourceIds: site.sources.map((source) => source.id),
+      providerIds: [...new Set(site.sources.map((source) => source.providerId))],
+    },
+  };
 }
 
 export class UniversalRadarClient {
@@ -6186,6 +7131,7 @@ export class UniversalRadarClient {
     this.catalog = buildLogicalRadarCatalog({
       includeNexrad: options.includeNexrad,
       includeInternational: options.includeInternational,
+      includeCommunity: options.includeCommunity,
       extraSites: options.extraSites || options.sites,
       sourceBindings: options.sourceBindings,
     });
@@ -6197,12 +7143,29 @@ export class UniversalRadarClient {
     const query = normalizeQuery(options.query);
     const countries = normalizeStringSet(options.country || options.countries);
     const providers = normalizeStringSet(options.providerId || options.providerIds || options.providers);
+    const sourceKinds = options.source === undefined && options.sources === undefined
+      ? null
+      : normalizeSources(options.source ?? options.sources);
+    const dataClass = String(options.dataClass || "").trim().toLowerCase();
     return this.catalog
       .filter((site) => !query || `${site.id} ${site.label} ${site.country}`.toUpperCase().includes(query))
       .filter((site) => !countries.size || countries.has(site.countryCode) || countries.has(String(site.country).toUpperCase()))
       .filter((site) => !providers.size || site.sources.some((source) => providers.has(String(source.providerId).toUpperCase())))
+      .filter((site) => !sourceKinds || site.sources.some((source) => sourceKinds.has(String(source.source).toLowerCase())))
+      .filter((site) => !dataClass || site.dataClass === dataClass)
       .filter((site) => options.live === undefined || site.capabilities.live === Boolean(options.live))
       .map(cloneLogicalRadarSite);
+  }
+
+  sitesGeoJson(options = {}) {
+    return {
+      type: "FeatureCollection",
+      features: this.sites(options).map(logicalRadarSiteFeature),
+    };
+  }
+
+  mapboxSiteSource(options = {}) {
+    return { type: "geojson", data: this.sitesGeoJson(options) };
   }
 
   site(siteRef) {
@@ -6235,6 +7198,18 @@ export class UniversalRadarClient {
       .map(([sourceId, health]) => ({ sourceId, ...health }));
   }
 
+  configureCache(options = {}) {
+    return this.toolbox.configureCache(options);
+  }
+
+  cacheStats() {
+    return this.toolbox.stats();
+  }
+
+  clearCache() {
+    return this.toolbox.clearCache();
+  }
+
   async open(siteRef, options = {}) {
     const site = this.site(siteRef);
     if (!site) throw new Error(`unknown logical radar site '${typeof siteRef === "object" ? siteRef?.id : siteRef}'`);
@@ -6261,13 +7236,14 @@ export class UniversalRadarClient {
 
   _transports(binding, options = {}) {
     if (options.fetch || binding.fetch) return [{ id: "custom", fetch: options.fetch || binding.fetch, prefetchBytes: true }];
+    const requiresPrefetch = PREFETCH_PREPROCESS_PROVIDER_IDS.has(binding.providerId);
     if (binding.access === "relay-required") {
       if (!this.relayFetch) throw new Error(`source '${binding.id}' requires a configured relay`);
       return [{
         id: "relay",
         fetch: this.relayFetch,
-        urlTransform: this.relayUrl ? (url) => relayTargetUrl(this.relayUrl, url) : null,
-        prefetchBytes: !this.relayUrl,
+        urlTransform: this.relayUrl && !requiresPrefetch ? (url) => relayTargetUrl(this.relayUrl, url) : null,
+        prefetchBytes: requiresPrefetch || !this.relayUrl,
       }];
     }
     const transports = [{ id: "direct", fetch: this.fetch, prefetchBytes: this.customFetch }];
@@ -6304,7 +7280,11 @@ export class UniversalRadarClient {
             urlTransform: transport.urlTransform,
             prefetchBytes: transport.prefetchBytes,
           });
-          validateUniversalLoop(loop, { ...settings, now: settings.now || this.now() });
+          validateUniversalLoop(loop, {
+            ...settings,
+            maxAgeMinutes: sourceAwareMaxAgeMinutes(binding, settings.maxAgeMinutes),
+            now: settings.now || this.now(),
+          });
           const selectedAt = this.now().toISOString();
           attempts.push({ sourceId: binding.id, transport: transport.id, status: "selected", durationMs: Date.now() - started });
           this._markSuccess(binding);
@@ -6317,11 +7297,7 @@ export class UniversalRadarClient {
         }
       }
     }
-    const error = new Error(`all radar sources failed for '${site.id}': ${attempts.map((attempt) => `${attempt.sourceId} (${attempt.error})`).join("; ")}`);
-    error.name = "RadarSourceResolutionError";
-    error.site = cloneLogicalRadarSite(site);
-    error.attempts = attempts;
-    throw error;
+    throw new RadarSourceResolutionError(site, attempts);
   }
 
   async _loadBinding(binding, options) {
@@ -6332,6 +7308,9 @@ export class UniversalRadarClient {
     }
     if (binding.planner === "international" || binding.source === "international") {
       return this.toolbox.loadInternationalLoop(binding.providerId, binding.providerSiteId, { ...options, frameCount });
+    }
+    if (binding.planner === "community" || binding.source === "community") {
+      return this.toolbox.loadCommunityLoop(binding.providerSiteId, { ...options, frameCount });
     }
     throw new Error(`source '${binding.id}' has no loader`);
   }
@@ -6357,6 +7336,14 @@ export class UniversalRadarClient {
               prefetchBytes: transport.prefetchBytes,
               site: binding.providerSiteId,
             })
+            : binding.planner === "community" || binding.source === "community"
+              ? await this.toolbox.pollCommunityLive(loop, {
+                ...settings,
+                fetch: transport.fetch,
+                urlTransform: transport.urlTransform,
+                prefetchBytes: transport.prefetchBytes,
+                feedId: binding.providerSiteId,
+              })
             : await this.toolbox.pollInternationalLive(loop, {
               ...settings,
               fetch: transport.fetch,
@@ -6365,7 +7352,11 @@ export class UniversalRadarClient {
               providerId: binding.providerId,
               siteId: binding.providerSiteId,
             });
-        if (result.loop) validateUniversalLoop(result.loop, { ...settings, now: settings.now || this.now() });
+        if (result.loop) validateUniversalLoop(result.loop, {
+          ...settings,
+          maxAgeMinutes: sourceAwareMaxAgeMinutes(binding, settings.maxAgeMinutes),
+          now: settings.now || this.now(),
+        });
         this._markSuccess(binding);
         return { ...result, transport: transport.id };
       } catch (error) {
@@ -6445,6 +7436,41 @@ export class UniversalRadarSession {
     return frame;
   }
 
+  productChoices(options = {}) {
+    const frame = this.frame(options.index ?? this.index);
+    return this.client.toolbox.productChoices(frame || this.loop, {
+      ...options,
+      selectedProduct: options.selectedProduct ?? options.product ?? this.loop?.product ?? this.options.product,
+      selectedCut: options.selectedCut ?? options.cut ?? frame?.renderOptions?.cut ?? this.loop?.cut,
+    });
+  }
+
+  cutChoices(options = {}) {
+    const frame = this.frame(options.index ?? this.index);
+    return this.client.toolbox.cutChoices(frame || this.loop, {
+      ...options,
+      selectedCut: options.selectedCut ?? frame?.renderOptions?.cut ?? this.loop?.cut,
+    });
+  }
+
+  capabilities(options = {}) {
+    const frame = this.frame(options.index ?? this.index);
+    return this.client.toolbox.capabilityHints(frame || this.loop, {
+      ...options,
+      site: options.site || this.site.id,
+      selectedProduct: options.selectedProduct ?? options.product ?? this.loop?.product ?? this.options.product,
+      selectedCut: options.selectedCut ?? options.cut ?? frame?.renderOptions?.cut ?? this.loop?.cut,
+    });
+  }
+
+  timeline(options = {}) {
+    if (!this.loop) return [];
+    return this.client.toolbox.loopTimeline(this.loop, {
+      ...options,
+      currentIndex: options.currentIndex ?? options.index ?? this.index,
+    });
+  }
+
   textureLayer(index = this.index, options = {}) {
     const frame = this.frame(index);
     if (!frame) throw new Error("UniversalRadarSession.textureLayer requires a loaded frame");
@@ -6463,7 +7489,7 @@ export class UniversalRadarSession {
       sourceId,
       layerId,
       radarLayer,
-      source: this.client.toolbox.mapboxCanvasSource(radarLayer, options.canvas, { animate: options.animate ?? true }),
+      source: this.client.toolbox.mapboxCanvasSource(radarLayer, options.canvas, { animate: options.animate ?? false }),
       layer: this.client.toolbox.mapboxRasterLayer(radarLayer, {
         sourceId,
         layerId,
@@ -6472,6 +7498,35 @@ export class UniversalRadarSession {
         emissiveStrength: options.emissiveStrength,
       }),
     };
+  }
+
+  syncMapLibre(map, options = {}) {
+    if (!map || typeof map.getSource !== "function" || typeof map.addSource !== "function" || typeof map.addLayer !== "function") {
+      throw new Error("UniversalRadarSession.syncMapLibre requires a MapLibre/Mapbox-compatible map");
+    }
+    if (!options.canvas) throw new Error("UniversalRadarSession.syncMapLibre requires a canvas");
+    const frame = this.draw(options.canvas, options.index ?? this.index);
+    const specs = this.mapbox({ ...options, animate: false });
+    let source = map.getSource(specs.sourceId);
+    if (!source) {
+      map.addSource(specs.sourceId, specs.source);
+      source = map.getSource(specs.sourceId);
+    }
+    if (!map.getLayer?.(specs.layerId)) {
+      if (options.beforeId) map.addLayer(specs.layer, options.beforeId);
+      else map.addLayer(specs.layer);
+    }
+    source?.setCoordinates?.(specs.source.coordinates);
+    source?.play?.();
+    map.triggerRepaint?.();
+    const scheduleFrame = globalThis.requestAnimationFrame
+      || ((callback) => globalThis.setTimeout(callback, 0));
+    scheduleFrame(() => scheduleFrame(() => source?.pause?.()));
+    if (options.fit && typeof map.fitBounds === "function") {
+      const { west, south, east, north } = specs.radarLayer.bounds;
+      map.fitBounds([[west, south], [east, north]], options.fitOptions || { padding: 24, duration: 0 });
+    }
+    return { ...specs, frame };
   }
 
   async setProduct(product, options = {}) {
@@ -6496,6 +7551,7 @@ export class UniversalRadarSession {
 
   async poll(options = {}) {
     const settings = { ...this.options, ...options };
+    const pollStarted = Date.now();
     try {
       const result = await this.client._pollBinding(this.binding, this.loop, settings);
       if (result.loop) {
@@ -6505,12 +7561,40 @@ export class UniversalRadarSession {
       }
       return { status: result.status, frame: result.frame, session: this, provenance: this.provenance };
     } catch (pollError) {
+      const pollAttempt = this.client._attemptFailure(
+        this.binding,
+        this.provenance?.transport || "unknown",
+        pollError,
+        Date.now() - pollStarted,
+      );
       const alternatives = this.site.sources.filter((source) => source.id !== this.binding.id);
-      if (!alternatives.length || settings.failover === false) throw pollError;
-      const result = await this.client._loadSite(this.site, {
-        ...settings,
-        excludeSourceIds: [this.binding.id],
-      });
+      if (!alternatives.length || settings.failover === false) {
+        if (pollError && typeof pollError === "object") {
+          pollError.attempts = [pollAttempt, ...(Array.isArray(pollError.attempts) ? pollError.attempts : [])];
+        }
+        throw pollError;
+      }
+      let result;
+      try {
+        result = await this.client._loadSite(this.site, {
+          ...settings,
+          excludeSourceIds: [this.binding.id],
+        });
+      } catch (failoverError) {
+        if (isRadarSourceResolutionError(failoverError)) {
+          throw new RadarSourceResolutionError(this.site, [pollAttempt, ...failoverError.attempts]);
+        }
+        throw failoverError;
+      }
+      result.attempts = [pollAttempt, ...result.attempts];
+      result.provenance = attachUniversalProvenance(
+        result.loop,
+        result.site,
+        result.binding,
+        result.provenance.transport,
+        result.attempts,
+        this.client.now().toISOString(),
+      );
       const previousSourceId = this.binding.id;
       this._applyResult(result);
       this.index = Math.max(0, this.length - 1);
@@ -6526,6 +7610,9 @@ export class UniversalRadarSession {
   }
 
   snapshot() {
+    const frame = this.frame();
+    const canDescribeCapabilities = typeof this.client.toolbox.capabilityHints === "function";
+    const canDescribeTimeline = typeof this.client.toolbox.loopTimeline === "function";
     return {
       type: "bowecho-universal-radar-session-v1",
       site: cloneLogicalRadarSite(this.site),
@@ -6535,7 +7622,10 @@ export class UniversalRadarSession {
       index: this.index,
       product: this.loop?.product || this.options.product || null,
       cut: this.loop?.cut ?? this.options.cut ?? null,
-      volumeTime: this.frame()?.frame?.volumeTime || this.frame()?.volumeTime || null,
+      volumeTime: frame?.frame?.volumeTime || frame?.volumeTime || null,
+      frame: frame ? summarizeRenderedFrame(frame, this.index) : null,
+      capabilities: canDescribeCapabilities ? this.capabilities() : null,
+      timeline: canDescribeTimeline ? this.timeline() : [],
     };
   }
 
@@ -7163,6 +8253,63 @@ function normalizeInternationalSiteDescriptor(site) {
     merge: Boolean(site.merge),
     siteFilteredDecode: Boolean(site.siteFilteredDecode),
   };
+}
+
+function inheritRadarLoopContext(nextLoop, previousLoop) {
+  for (const key of [
+    "siteDescriptor",
+    "internationalProviderId",
+    "internationalSite",
+    "communityFeed",
+    "archiveWindow",
+    "source",
+    "logicalSite",
+    "sourceBinding",
+    "provenance",
+  ]) {
+    if (previousLoop?.[key] !== undefined) nextLoop[key] = previousLoop[key];
+  }
+  return nextLoop;
+}
+
+function resolveAustraliaNciInternationalSite(siteId) {
+  const id = String(siteId || "").trim();
+  if (!/^\d+$/.test(id)) throw new Error(`Australia NCI: invalid site id '${siteId}'`);
+  const site = findInternationalRadarSite("australia-nci", id);
+  if (!site) throw new Error(`Australia NCI: unknown site id '${siteId}'`);
+  return site;
+}
+
+function resolvePiemonteInternationalSite(siteId) {
+  const id = String(siteId || "").trim().toLowerCase();
+  if (!PIEMONTE_SITE_CONFIG[id]) throw new Error(`ARPA Piemonte: unknown site '${siteId}'`);
+  const site = findInternationalRadarSite("arpa-piemonte", id);
+  if (!site) throw new Error(`ARPA Piemonte: missing catalog site '${siteId}'`);
+  return site;
+}
+
+function resolveLombardiaInternationalSite(siteId) {
+  const id = String(siteId || "").trim().toLowerCase();
+  if (!LOMBARDIA_SITE_CONFIG[id]) throw new Error(`ARPA Lombardia: unknown site '${siteId}'`);
+  const site = findInternationalRadarSite("arpa-lombardia", id);
+  if (!site) throw new Error(`ARPA Lombardia: missing catalog site '${siteId}'`);
+  return site;
+}
+
+function resolveKaiaInternationalSite(siteId) {
+  const id = String(siteId || "").trim().toLowerCase();
+  if (!KAIA_SITE_CONFIG[id]) throw new Error(`KAIA: unknown site '${siteId}'`);
+  const site = findInternationalRadarSite("kaia", id);
+  if (!site) throw new Error(`KAIA: missing catalog site '${siteId}'`);
+  return site;
+}
+
+function resolveMeteoRomaniaInternationalSite(siteId) {
+  const id = String(siteId || "").trim().toUpperCase();
+  if (!METEOROMANIA_SITE_IDS.has(id)) throw new Error(`unknown ANM site '${siteId}'`);
+  const site = findInternationalRadarSite("meteoromania", id);
+  if (!site) throw new Error(`ANM: missing catalog site '${siteId}'`);
+  return site;
 }
 
 function resolveSmhiInternationalSite(siteId) {
@@ -8237,55 +9384,61 @@ async function recentOrdFramePlans(siteId, count, options = {}) {
   const lookbackSlots = clampInt(options.hourLookbackSlots ?? ORD_HOUR_LOOKBACK_SLOTS, 0, 48);
   const newestHourMs = ordHourMs(options.now || new Date());
   const errors = [];
-
+  const keysByKind = new Map();
   for (const kind of kinds) {
     const keys = [];
     const seen = new Set();
-    for (let slot = 0; slot <= lookbackSlots; slot += 1) {
-      const hourMs = newestHourMs - slot * 60 * 60_000;
-      let hourKeys = [];
+    const fetchedHours = new Set();
+    const fetchHour = async (hourMs) => {
+      if (fetchedHours.has(hourMs)) return [];
+      fetchedHours.add(hourMs);
       try {
-        hourKeys = await fetchOrdHourKeys(site.id, kind, hourMs, options);
-        ordAddUniqueKeys(keys, seen, hourKeys);
-        if (hourKeys.length) {
-          ordAddUniqueKeys(keys, seen, await fetchOrdHourKeys(site.id, kind, hourMs - 60 * 60_000, options));
-          const plans = ordFramePlansFromKeys(site.id, kind, keys, { ...options, count: maxCount });
-          if (plans.length) return plans.slice(-maxCount);
-        }
+        return await fetchOrdHourKeys(site.id, kind, hourMs, options);
       } catch (error) {
         errors.push(error);
-        if (options.strict !== false) throw error;
+        if (options.strict === true) throw error;
+        return [];
+      }
+    };
+    for (let slot = 0; slot <= lookbackSlots; slot += 1) {
+      const hourMs = newestHourMs - slot * 60 * 60_000;
+      const hourKeys = await fetchHour(hourMs);
+      ordAddUniqueKeys(keys, seen, hourKeys);
+      if (hourKeys.length) {
+        ordAddUniqueKeys(keys, seen, await fetchHour(hourMs - 60 * 60_000));
+        const files = ordFilesFromKeys(site.id, kind, keys);
+        if (files.length && ordRecentPlansForFiles(site, kind, files, options).length >= maxCount) break;
       }
     }
+    if (keys.length) keysByKind.set(kind, keys);
   }
+
+  const plans = ordBestPlansFromKindKeys(site, keysByKind, { ...options, count: maxCount });
+  if (plans.length) return plans;
 
   const suffix = errors.length ? ` (${errors.map((error) => error.message || String(error)).join("; ")})` : "";
   throw new Error(`ORD: no files for site '${site.id}' in the requested hour window${suffix}`);
 }
 
 function ordFramePlansFromExplicitSources(site, maxCount, options = {}) {
-  const entries = [];
+  const entries = new Map();
+  const addEntry = (rawKind, keysOrListing) => {
+    const kind = validateOrdObjectKind(rawKind);
+    const existing = entries.get(kind) || [];
+    ordAddUniqueKeys(existing, new Set(existing), normalizeOrdKeys(keysOrListing));
+    entries.set(kind, existing);
+  };
   if (options.keysByKind) {
-    entries.push(...Object.entries(options.keysByKind));
+    for (const [kind, value] of Object.entries(options.keysByKind)) addEntry(kind, value);
   }
   if (options.listingsByKind) {
-    entries.push(...Object.entries(options.listingsByKind));
+    for (const [kind, value] of Object.entries(options.listingsByKind)) addEntry(kind, value);
   }
   if (options.keys !== undefined || options.listing !== undefined) {
-    entries.push([options.objectKind || options.kind || ordObjectKinds(site.id)[0], options.keys ?? options.listing]);
+    addEntry(options.objectKind || options.kind || ordObjectKinds(site.id)[0], options.keys ?? options.listing);
   }
-  if (!entries.length) return null;
-
-  const plans = [];
-  for (const [rawKind, keysOrListing] of entries) {
-    const kind = validateOrdObjectKind(rawKind);
-    plans.push(...ordFramePlansFromKeys(site.id, kind, keysOrListing));
-  }
-  plans.sort((left, right) =>
-    dateMs(left.volumeTime || 0, "ORD plan time") - dateMs(right.volumeTime || 0, "ORD plan time")
-    || left.identity.localeCompare(right.identity)
-  );
-  return plans.slice(-maxCount);
+  if (!entries.size) return null;
+  return ordBestPlansFromKindKeys(site, entries, { ...options, count: maxCount });
 }
 
 async function fetchOrdHourKeys(siteId, objectKind, hourMs, options = {}) {
@@ -8314,6 +9467,183 @@ function ordAddUniqueKeys(target, seen, keys) {
     seen.add(key);
     target.push(key);
   }
+}
+
+function ordFilesFromKeys(siteId, objectKind, keysOrListing) {
+  const kind = validateOrdObjectKind(objectKind);
+  return normalizeOrdKeys(keysOrListing)
+    .map((key) => normalizeOrdFile(siteId, key))
+    .filter(Boolean)
+    .filter((file) => file.objectKind === kind)
+    .sort((left, right) => left.timeMs - right.timeMs || left.key.localeCompare(right.key));
+}
+
+function ordRecentPlansForFiles(site, objectKind, files, options = {}) {
+  const kind = validateOrdObjectKind(objectKind);
+  let remaining = [...files];
+  const plans = [];
+  while (remaining.length) {
+    const anchorMs = ordSelectFrameAnchor(remaining, kind);
+    if (!Number.isFinite(anchorMs)) break;
+    const chosen = ordChooseFilesForAnchor(remaining, kind, anchorMs);
+    if (chosen.length) plans.push(ordPlanFromChosen(site, kind, chosen, anchorMs, options));
+    const windowStartMs = anchorMs - ORD_CYCLE_WINDOW_MINUTES * 60_000;
+    // Drop the whole processed tail, including a newer half-uploaded cycle
+    // that complete-cycle selection deliberately stepped behind.
+    remaining = remaining.filter((file) => file.timeMs <= windowStartMs);
+  }
+  return ordSortDedupePlans(plans);
+}
+
+function ordSelectFrameAnchor(files, objectKind) {
+  const anchors = [...new Set(files.map((file) => file.timeMs).filter(Number.isFinite))]
+    .sort((left, right) => right - left);
+  if (!anchors.length) return NaN;
+  const newest = anchors[0];
+  for (const anchorMs of anchors) {
+    if (newest - anchorMs > ORD_COMPLETE_FRAME_MAX_AGE_MINUTES * 60_000) break;
+    if (ordChosenHasReflectivityAndVelocity(ordChooseFilesForAnchor(files, objectKind, anchorMs))) return anchorMs;
+  }
+  return newest;
+}
+
+function ordChooseFilesForAnchor(files, objectKind, anchorMs) {
+  const kind = validateOrdObjectKind(objectKind);
+  const windowStartMs = anchorMs - ORD_CYCLE_WINDOW_MINUTES * 60_000;
+  const freshestByGroup = new Map();
+  for (const file of files) {
+    if (!Number.isFinite(file.timeMs) || file.timeMs <= windowStartMs || file.timeMs > anchorMs) continue;
+    const group = kind === "PVOL" ? file.momentText : `${file.momentText}@${file.elevationText}`;
+    const existing = freshestByGroup.get(group);
+    if (!existing || ordFileSortValue(file, existing) > 0) freshestByGroup.set(group, file);
+  }
+  return [...freshestByGroup.values()];
+}
+
+function ordChooseVelocityFilesAtOrBeforeAnchor(files, objectKind, anchorMs) {
+  const kind = validateOrdObjectKind(objectKind);
+  const oldestMs = anchorMs - ORD_MIXED_SOURCE_MAX_AGE_MINUTES * 60_000;
+  const freshestByGroup = new Map();
+  for (const file of files) {
+    if (!ordFileHasVelocity(file) || file.timeMs < oldestMs || file.timeMs > anchorMs) continue;
+    const group = kind === "PVOL" ? file.momentText : `${file.momentText}@${file.elevationText}`;
+    const existing = freshestByGroup.get(group);
+    if (!existing || ordFileSortValue(file, existing) > 0) freshestByGroup.set(group, file);
+  }
+  return [...freshestByGroup.values()];
+}
+
+function ordBestPlansFromKindKeys(site, keysByKind, options = {}) {
+  const collections = [];
+  for (const [rawKind, keys] of keysByKind) {
+    const kind = validateOrdObjectKind(rawKind);
+    const files = ordFilesFromKeys(site.id, kind, keys);
+    if (!files.length) continue;
+    const plans = ordRecentPlansForFiles(site, kind, files, options);
+    if (plans.length) collections.push(ordPlanCollection(plans));
+  }
+  const mixedPlans = ordMixedRecentPlans(site, keysByKind, options);
+  if (mixedPlans.length) collections.push(ordPlanCollection(mixedPlans));
+  const best = collections.reduce((current, candidate) =>
+    !current || ordCollectionIsBetter(candidate, current) ? candidate : current
+  , null);
+  if (!best) return [];
+  const count = clampInt(options.count ?? options.limit ?? best.plans.length, 1, 1000);
+  return best.plans.slice(-count);
+}
+
+function ordMixedRecentPlans(site, keysByKind, options = {}) {
+  const keysFor = (kind) => keysByKind.get(kind) || [];
+  const pairs = [
+    ["SCAN", keysFor("SCAN"), "PVOL", keysFor("PVOL")],
+    ["PVOL", keysFor("PVOL"), "SCAN", keysFor("SCAN")],
+  ];
+  const plans = [];
+  for (const [refKind, refKeys, velocityKind, velocityKeys] of pairs) {
+    if (!refKeys.length || !velocityKeys.length) continue;
+    const refFiles = ordFilesFromKeys(site.id, refKind, refKeys);
+    const velocityFiles = ordFilesFromKeys(site.id, velocityKind, velocityKeys);
+    const anchors = [...new Set(refFiles.filter(ordFileHasReflectivity).map((file) => file.timeMs))]
+      .sort((left, right) => left - right);
+    for (const anchorMs of anchors) {
+      const reflectivity = ordChooseFilesForAnchor(refFiles, refKind, anchorMs).filter(ordFileHasReflectivity);
+      const velocity = ordChooseVelocityFilesAtOrBeforeAnchor(velocityFiles, velocityKind, anchorMs);
+      const byKey = new Map([...reflectivity, ...velocity].map((file) => [file.key, file]));
+      const chosen = [...byKey.values()];
+      if (!ordChosenHasReflectivityAndVelocity(chosen)) continue;
+      plans.push(ordPlanFromChosen(site, "SCAN+PVOL", chosen, anchorMs, options));
+    }
+  }
+  return ordSortDedupePlans(plans);
+}
+
+function ordPlanCollection(plans) {
+  const sorted = ordSortDedupePlans(plans);
+  const latest = sorted[sorted.length - 1];
+  return {
+    plans: sorted,
+    newestMs: dateMs(latest.volumeTime, "ORD plan time"),
+    quality: ordPlanQualityForFiles(latest.sourceItem?.files || []),
+    objectKind: latest.sourceItem?.objectKind || "",
+  };
+}
+
+function ordCollectionIsBetter(candidate, current) {
+  const candidateHasReflectivity = candidate.quality >= 2;
+  const currentHasReflectivity = current.quality >= 2;
+  if (candidateHasReflectivity === currentHasReflectivity
+      && Math.abs(candidate.newestMs - current.newestMs) > ORD_COMPLETE_FRAME_MAX_AGE_MINUTES * 60_000) {
+    return candidate.newestMs > current.newestMs;
+  }
+  if (candidate.quality !== current.quality) return candidate.quality > current.quality;
+  if (candidate.newestMs !== current.newestMs) return candidate.newestMs > current.newestMs;
+  return ordObjectKindTieRank(candidate.objectKind) > ordObjectKindTieRank(current.objectKind);
+}
+
+function ordObjectKindTieRank(kind) {
+  return kind === "PVOL" ? 1 : 0;
+}
+
+function ordSortDedupePlans(plans) {
+  const sorted = [...plans].sort((left, right) =>
+    dateMs(left.volumeTime, "ORD plan time") - dateMs(right.volumeTime, "ORD plan time")
+    || left.identity.localeCompare(right.identity)
+  );
+  const seen = new Set();
+  return sorted.filter((plan) => {
+    if (seen.has(plan.identity)) return false;
+    seen.add(plan.identity);
+    return true;
+  });
+}
+
+function ordPlanQualityForFiles(files) {
+  if (ordChosenHasReflectivityAndVelocity(files)) return 3;
+  if (files.some(ordFileHasReflectivity)) return 2;
+  if (files.some(ordFileHasVelocity)) return 1;
+  return 0;
+}
+
+function ordChosenHasReflectivityAndVelocity(files) {
+  const reflectivityElevations = new Set();
+  const velocityElevations = new Set();
+  for (const file of files) {
+    const hasReflectivity = ordFileHasReflectivity(file);
+    const hasVelocity = ordFileHasVelocity(file);
+    if (hasReflectivity && hasVelocity) return true;
+    const elevations = String(file.elevationText || "").split("_").filter(Boolean);
+    if (hasReflectivity) for (const elevation of elevations) reflectivityElevations.add(elevation);
+    if (hasVelocity) for (const elevation of elevations) velocityElevations.add(elevation);
+  }
+  return [...reflectivityElevations].some((elevation) => velocityElevations.has(elevation));
+}
+
+function ordFileHasReflectivity(file) {
+  return (file.moments || []).some((moment) => ["DBZH", "DBZV", "DBZ", "TH", "TV"].includes(moment));
+}
+
+function ordFileHasVelocity(file) {
+  return (file.moments || []).some((moment) => String(moment).startsWith("V"));
 }
 
 function normalizeOrdKeys(keysOrListing) {
@@ -8385,16 +9715,11 @@ function normalizeOrdFile(siteId, keyOrObject) {
 }
 
 function ordPlanForAnchor(site, objectKind, files, anchorMs, options = {}) {
-  const windowStartMs = anchorMs - ORD_CYCLE_WINDOW_MINUTES * 60_000;
-  const freshestByGroup = new Map();
-  for (const file of files) {
-    if (!Number.isFinite(file.timeMs) || file.timeMs <= windowStartMs || file.timeMs > anchorMs) continue;
-    const group = objectKind === "PVOL" ? file.momentText : `${file.momentText}@${file.elevationText}`;
-    const existing = freshestByGroup.get(group);
-    if (!existing || ordFileSortValue(file, existing) > 0) freshestByGroup.set(group, file);
-  }
+  return ordPlanFromChosen(site, objectKind, ordChooseFilesForAnchor(files, objectKind, anchorMs), anchorMs, options);
+}
 
-  let chosen = [...freshestByGroup.values()];
+function ordPlanFromChosen(site, objectKind, chosenFiles, anchorMs, options = {}) {
+  let chosen = [...new Map(chosenFiles.map((file) => [file.key, file])).values()];
   const filteredReflectivityElevations = new Set(
     chosen
       .filter((file) => file.hasFilteredReflectivity)
@@ -8599,6 +9924,18 @@ async function inflateRawDeflate(bytes, name = "entry") {
   }
 }
 
+async function decompressGzipBytes(bytes, name = "part") {
+  if (typeof DecompressionStream !== "function" || typeof Blob !== "function" || typeof Response !== "function") {
+    throw new Error(`gzip radar part '${name}' requires DecompressionStream('gzip')`);
+  }
+  try {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  } catch (error) {
+    throw new Error(`failed to decompress gzip radar part '${name}': ${error.message || error}`);
+  }
+}
+
 function dosDateTimeToIso(dateValue, timeValue) {
   if (!dateValue && !timeValue) return null;
   const year = 1980 + ((dateValue >> 9) & 0x7f);
@@ -8736,7 +10073,9 @@ function makeInternationalFramePlan({ providerId, providerLabel, site, identity,
   const normalizedSite = normalizeInternationalSiteDescriptor(site);
   if (!normalizedSite) throw new Error("international frame plan requires a site with lat/lon");
   const normalizedParts = Array.from(parts || [])
-    .map((part) => ({ url: String(part?.url || part || "").trim() }))
+    .map((part) => typeof part === "object" && part !== null
+      ? { ...cloneCatalogRecord(part), url: String(part.url || "").trim() }
+      : { url: String(part || "").trim() })
     .filter((part) => part.url);
   if (!normalizedParts.length) throw new Error("international frame plan requires at least one URL part");
   const id = normalizeInternationalProviderId(providerId);

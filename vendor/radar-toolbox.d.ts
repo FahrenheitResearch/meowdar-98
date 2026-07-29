@@ -5,6 +5,10 @@ export const EARTH_RADIUS_KM: number;
 export const WEB_MERCATOR_RADIUS_M: number;
 export const MAX_WEB_MERCATOR_LAT: number;
 export const DEFAULT_USER_PALETTE_STORAGE_KEY: string;
+export const AUSTRALIA_NCI_BASE_URL: string;
+export const AUSTRALIA_NCI_SITE_LIST_URL: string;
+export const ARPA_LOMBARDIA_RADAR_ROOT: string;
+export const ARPA_PIEMONTE_RADAR_ROOT: string;
 export const CHMI_RADAR_SITES_ROOT: string;
 export const DMI_RADAR_VOLUME_ITEMS_URL: string;
 export const DWD_RADAR_SITES_ROOT: string;
@@ -12,6 +16,9 @@ export const FMI_RADAR_VOLUME_BUCKET_URL: string;
 export const GEOSPHERE_DATAHUB_URL: string;
 export const GEOSPHERE_HOCHFICHT_PREFIX: string;
 export const JMA_RADAR_BASE_URL: string;
+export const KAIA_QUERY_URL: string;
+export const KAIA_FILE_BASE_URL: string;
+export const METEOROMANIA_RADAR_ROOT: string;
 export const ORD_RADAR_BUCKET_URL: string;
 export const SHMU_RADAR_VOLUME_ROOT: string;
 export const SMHI_RADAR_API_BASE: string;
@@ -187,6 +194,31 @@ export interface RadarSite {
 
 export type RadarCatalogSource = "nexrad" | "international" | "community" | "custom" | string;
 
+export type RadarSourceAvailability = "live" | "archive-delayed" | (string & {});
+
+export interface RadarSourceMetadata {
+  availability?: RadarSourceAvailability;
+  typicalDelayDays?: number | null;
+  [key: string]: unknown;
+}
+
+export type InternationalProviderId =
+  | "australia-nci"
+  | "arpa-piemonte"
+  | "arpa-lombardia"
+  | "chmi"
+  | "dmi"
+  | "dwd"
+  | "fmi"
+  | "geosphere"
+  | "jma"
+  | "kaia"
+  | "meteoromania"
+  | "ord"
+  | "shmu"
+  | "smhi"
+  | string;
+
 export interface GlobalRadarProvider {
   id: string;
   label: string;
@@ -205,6 +237,8 @@ export interface GlobalRadarProvider {
     siteFilteredDecode?: boolean;
     dirListPolling?: boolean;
     clientSideReady?: boolean;
+    archiveDelayed?: boolean;
+    typicalDelayDays?: number | null;
     [key: string]: unknown;
   };
 }
@@ -220,6 +254,12 @@ export interface InternationalRadarSite {
   format: SupportedByteFormatId;
   merge: boolean | "mixed";
   siteFilteredDecode: boolean;
+  logicalSiteId?: string;
+  countryCode?: string;
+  availability?: RadarSourceAvailability;
+  priority?: number;
+  role?: RadarSourceRole;
+  access?: RadarSourceAccess;
 }
 
 export type RadarSourceRole = "preferred" | "fallback" | "archive" | string;
@@ -240,11 +280,12 @@ export interface RadarSourceBinding {
   siteFilteredDecode: boolean;
   live: boolean;
   archive: boolean;
+  maxAgeMinutes?: number | null;
   attribution: string | null;
   fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
   load?: (context: { binding: RadarSourceBinding; options: UniversalRadarOpenOptions; toolbox: BowEchoRadarToolbox }) => Promise<RadarLoop>;
   poll?: (context: { binding: RadarSourceBinding; loop: RadarLoop; options: UniversalRadarOpenOptions; toolbox: BowEchoRadarToolbox }) => Promise<PollLiveResult>;
-  metadata: Record<string, unknown>;
+  metadata: RadarSourceMetadata;
 }
 
 export interface LogicalRadarSite {
@@ -261,10 +302,47 @@ export interface LogicalRadarSite {
   capabilities: {
     live: boolean;
     archive: boolean;
+    realtime: boolean;
+    archiveDelayed: boolean;
     clientSide: boolean;
     failover: boolean;
   };
   sources: RadarSourceBinding[];
+}
+
+export interface LogicalRadarSiteFeature {
+  type: "Feature";
+  id: string;
+  geometry: {
+    type: "Point";
+    coordinates: [number, number];
+  };
+  properties: {
+    id: string;
+    label: string;
+    name: string;
+    country: string;
+    countryCode: string;
+    dataClass: string;
+    live: boolean;
+    realtime: boolean;
+    archive: boolean;
+    archiveDelayed: boolean;
+    failover: boolean;
+    sourceCount: number;
+    sourceIds: string[];
+    providerIds: string[];
+  };
+}
+
+export interface LogicalRadarSiteFeatureCollection {
+  type: "FeatureCollection";
+  features: LogicalRadarSiteFeature[];
+}
+
+export interface MapboxLogicalRadarSiteSource {
+  type: "geojson";
+  data: LogicalRadarSiteFeatureCollection;
 }
 
 export interface RadarSourceAttempt {
@@ -274,6 +352,16 @@ export interface RadarSourceAttempt {
   durationMs: number;
   error?: string;
 }
+
+export class RadarSourceResolutionError extends Error {
+  readonly name: "RadarSourceResolutionError";
+  readonly code: "RADAR_SOURCE_RESOLUTION_FAILED";
+  readonly site: LogicalRadarSite;
+  readonly attempts: RadarSourceAttempt[];
+  constructor(site: LogicalRadarSite, attempts?: RadarSourceAttempt[]);
+}
+
+export function isRadarSourceResolutionError(error: unknown): error is RadarSourceResolutionError;
 
 export interface RadarProvenance {
   type: "bowecho-radar-provenance-v1";
@@ -315,6 +403,7 @@ export interface RadarClientOptions {
   now?: () => Date;
   includeNexrad?: boolean;
   includeInternational?: boolean;
+  includeCommunity?: boolean;
   extraSites?: Array<Partial<LogicalRadarSite> & Pick<LogicalRadarSite, "id" | "lat" | "lon" | "sources">>;
   sites?: Array<Partial<LogicalRadarSite> & Pick<LogicalRadarSite, "id" | "lat" | "lon" | "sources">>;
   sourceBindings?: Array<Partial<RadarSourceBinding> & Pick<RadarSourceBinding, "id" | "providerSiteId"> & { logicalSiteId: string; site?: Partial<LogicalRadarSite> }>;
@@ -323,6 +412,7 @@ export interface RadarClientOptions {
 export interface LogicalRadarSiteOptions {
   includeNexrad?: boolean;
   includeInternational?: boolean;
+  includeCommunity?: boolean;
   extraSites?: RadarClientOptions["extraSites"];
   sites?: RadarClientOptions["sites"];
   sourceBindings?: RadarClientOptions["sourceBindings"];
@@ -332,6 +422,8 @@ export interface LogicalRadarSiteOptions {
   providerId?: string | string[];
   providerIds?: string | string[];
   providers?: string | string[];
+  source?: RadarCatalogSource | RadarCatalogSource[];
+  sources?: RadarCatalogSource | RadarCatalogSource[];
   dataClass?: string;
   live?: boolean;
 }
@@ -355,6 +447,53 @@ export interface RadarSourceHealth {
 
 export interface InternationalPlanPart {
   url: string;
+  zipMember?: string;
+  preprocessing?: "zip-member-range" | string;
+  compression?: "gzip" | string;
+}
+
+export interface AustraliaNciRadarSite {
+  id: string;
+  siteId: string;
+  label: string;
+  country: "Australia";
+  lat: number;
+  lon: number;
+  status: "OK" | "CHECK" | string;
+}
+
+export interface AustraliaNciTarlistItem {
+  fileName: string;
+  siteId: string;
+  date: string;
+  stamp: string;
+  volumeTime: string | null;
+  zipUrl: string;
+}
+
+export interface PiemonteVolumeItem {
+  fileName: string;
+  stamp: string;
+  volumeTime: string | null;
+}
+
+export interface LombardiaProductItem extends PiemonteVolumeItem {
+  product: string;
+}
+
+export interface KaiaVolumeItem {
+  identity: string;
+  timestamp: string;
+  volumeTime: string;
+  url: string;
+  documentId: string | number;
+  fileId: string | number;
+  fileName: string | null;
+  siteId: string;
+}
+
+export interface MeteoRomaniaMomentItem extends PiemonteVolumeItem {
+  moment: "dBZ" | "V" | "ZDR" | "KDP" | "RhoHV" | string;
 }
 
 export interface InternationalFramePlan {
@@ -379,7 +518,7 @@ export interface InternationalFramePlan {
   merge: boolean;
   format: SupportedByteFormatId;
   volumeTime: string | null;
-  sourceItem: ChmiFrameSourceItem | DmiVolumeItem | DwdFrameSourceItem | FmiVolumeItem | GeosphereVolumeItem | JmaFrameSourceItem | OrdFrameSourceItem | ShmuFrameSourceItem | SmhiQcvolItem | Record<string, unknown> | null;
+  sourceItem: AustraliaNciTarlistItem | PiemonteVolumeItem | LombardiaProductItem | KaiaVolumeItem | MeteoRomaniaMomentItem | ChmiFrameSourceItem | DmiVolumeItem | DwdFrameSourceItem | FmiVolumeItem | GeosphereVolumeItem | JmaFrameSourceItem | OrdFrameSourceItem | ShmuFrameSourceItem | SmhiQcvolItem | Record<string, unknown> | null;
 }
 
 export interface SmhiAreaItem {
@@ -743,6 +882,16 @@ export interface InternationalFetchOptions extends CommunityFetchOptions {
   datePrefix?: string;
   datePrefixes?: string[] | string;
   now?: string | Date;
+  since?: string | Date;
+  bookmark?: string | null;
+  queryUrl?: string;
+  pages?: Array<string | Record<string, unknown>> | string | Record<string, unknown>;
+  queryResults?: Array<string | Record<string, unknown>> | string | Record<string, unknown>;
+  siteListUrl?: string;
+  tarlistByDate?: Record<string, string>;
+  tarlistsByDate?: Record<string, string>;
+  strict?: boolean;
+  prefetchBytes?: boolean;
   lookbackMinutes?: number;
   maxKeys?: number;
   maxKeysPerPage?: number;
@@ -1059,7 +1208,9 @@ export interface FrameDescriptor {
   lastModified?: string | null;
   url?: string;
   urls?: string[];
+  parts?: InternationalPlanPart[];
   bytes?: Uint8Array | ArrayBuffer;
+  byteParts?: Array<Uint8Array | ArrayBuffer>;
   volumeTime?: string | null;
   siteLocation?: {
     lat?: number | null;
@@ -2453,6 +2604,50 @@ export interface MapboxRadarCanvasSource {
   coordinates: [[number, number], [number, number], [number, number], [number, number]];
 }
 
+export interface UniversalRadarMapboxOptions extends RenderOptions {
+  canvas: HTMLCanvasElement;
+  index?: number | "latest";
+  sourceId?: string;
+  layerId?: string;
+  opacity?: number;
+  fadeDuration?: number;
+  emissiveStrength?: number;
+  animate?: boolean;
+}
+
+export interface UniversalRadarMapboxSpecs {
+  sourceId: string;
+  layerId: string;
+  radarLayer: RadarTextureLayer;
+  source: MapboxRadarCanvasSource;
+  layer: MapboxRadarRasterLayer;
+}
+
+export interface MapLibreCanvasSourceLike {
+  setCoordinates?(coordinates: MapboxRadarCanvasSource["coordinates"]): void;
+  play?(): void;
+  pause?(): void;
+}
+
+export interface MapLibreMapLike {
+  getSource(id: string): MapLibreCanvasSourceLike | null | undefined;
+  addSource(id: string, source: MapboxRadarCanvasSource): unknown;
+  getLayer?(id: string): unknown;
+  addLayer(layer: MapboxRadarRasterLayer, beforeId?: string): unknown;
+  triggerRepaint?(): void;
+  fitBounds?(bounds: [[number, number], [number, number]], options?: Record<string, unknown>): unknown;
+}
+
+export interface UniversalRadarMapSyncOptions extends UniversalRadarMapboxOptions {
+  beforeId?: string;
+  fit?: boolean;
+  fitOptions?: Record<string, unknown>;
+}
+
+export interface UniversalRadarMapSyncResult extends UniversalRadarMapboxSpecs {
+  frame: RenderedFrame;
+}
+
 export interface MapboxRadarRasterLayer {
   id: string;
   type: "raster";
@@ -2694,6 +2889,25 @@ export function internationalRadarSites(options?: RadarSiteCatalogOptions): Inte
 export function internationalRadarProvider(providerId: string): GlobalRadarProvider | null;
 export function internationalRadarSite(providerId: string, siteId: string): InternationalFramePlan["site"] | null;
 export function internationalRadarSite(siteIdOrDescriptor: string | InternationalRadarSite | InternationalFramePlan["site"]): InternationalFramePlan["site"] | null;
+export function australiaNciSiteListUrl(options?: InternationalFetchOptions): string;
+export function parseAustraliaNciSiteCsv(csv: string): AustraliaNciRadarSite[];
+export function australiaNciTarlistUrl(siteId: string, date: string | Date, options?: InternationalFetchOptions): string;
+export function australiaNciDailyZipUrl(siteId: string, date: string | Date, options?: InternationalFetchOptions): string;
+export function parseAustraliaNciTarlist(siteId: string, date: string | Date, text: string, options?: InternationalFetchOptions): AustraliaNciTarlistItem[];
+export function australiaNciFramePlansFromTarlist(siteId: string, date: string | Date, text: string, options?: InternationalFetchOptions): InternationalFramePlan[];
+export function fetchAustraliaNciZipMemberBytes(zipUrl: string, memberName: string, options?: InternationalFetchOptions): Promise<Uint8Array>;
+export function piemonteSiteListingUrl(siteId: string, options?: InternationalFetchOptions): string;
+export function parsePiemonteVolumeListing(siteId: string, textOrEntries: string | Partial<AutoIndexEntry>[]): PiemonteVolumeItem[];
+export function piemonteFramePlansFromListing(siteId: string, textOrEntries: string | Partial<AutoIndexEntry>[], options?: InternationalFetchOptions): InternationalFramePlan[];
+export function lombardiaSiteListingUrl(siteId: string, options?: InternationalFetchOptions): string;
+export function parseLombardiaProductListing(siteId: string, textOrEntries: string | Partial<AutoIndexEntry>[]): LombardiaProductItem[];
+export function lombardiaFramePlansFromListing(siteId: string, textOrEntries: string | Partial<AutoIndexEntry>[], options?: InternationalFetchOptions): InternationalFramePlan[];
+export function kaiaQueryBody(siteId: string, options?: InternationalFetchOptions): Record<string, unknown>;
+export function parseKaiaQueryResults(siteId: string, textOrJson: string | Record<string, unknown>): KaiaVolumeItem[];
+export function kaiaFramePlansFromQueryResults(siteId: string, pages: Array<string | Record<string, unknown>> | string | Record<string, unknown>, options?: InternationalFetchOptions): InternationalFramePlan[];
+export function meteoRomaniaSiteListingUrl(siteId: string, options?: InternationalFetchOptions): string;
+export function parseMeteoRomaniaListing(siteId: string, textOrEntries: string | Partial<AutoIndexEntry>[]): MeteoRomaniaMomentItem[];
+export function meteoRomaniaFramePlansFromListing(siteId: string, textOrEntries: string | Partial<AutoIndexEntry>[], options?: InternationalFetchOptions): InternationalFramePlan[];
 export function smhiAreaCatalogUrl(options?: InternationalFetchOptions): string;
 export function smhiQcvolCatalogUrl(siteId: string, options?: InternationalFetchOptions): string;
 export function smhiDatedQcvolUrl(siteId: string, key: string, options?: InternationalFetchOptions): string | null;
@@ -2783,13 +2997,13 @@ export function fmiRadarVolumeListingUrl(siteId: string, options?: International
 export function parseFmiVolumeListing(siteId: string, textOrListing: string | Partial<S3StyleListing>, options?: InternationalFetchOptions): FmiVolumeItem[];
 export function fmiFramePlansFromListing(siteId: string, textOrListing: string | Partial<S3StyleListing>, options?: InternationalFetchOptions): InternationalFramePlan[];
 export function fmiFramePlanFromListing(siteId: string, textOrListing: string | Partial<S3StyleListing>, options?: InternationalFetchOptions): InternationalFramePlan;
-export function latestInternationalFramePlan(providerId: "chmi" | "dmi" | "dwd" | "fmi" | "geosphere" | "jma" | "ord" | "shmu" | "smhi" | string, siteId: string, options?: InternationalFetchOptions): Promise<InternationalFramePlan>;
-export function recentInternationalFramePlans(providerId: "chmi" | "dmi" | "dwd" | "fmi" | "geosphere" | "jma" | "ord" | "shmu" | "smhi" | string, siteId: string, count?: number, options?: InternationalFetchOptions): Promise<InternationalFramePlan[]>;
-export function recentInternationalFramePlans(providerId: "chmi" | "dmi" | "dwd" | "fmi" | "geosphere" | "jma" | "ord" | "shmu" | "smhi" | string, siteId: string, options?: InternationalFetchOptions): Promise<InternationalFramePlan[]>;
+export function latestInternationalFramePlan(providerId: InternationalProviderId, siteId: string, options?: InternationalFetchOptions): Promise<InternationalFramePlan>;
+export function recentInternationalFramePlans(providerId: InternationalProviderId, siteId: string, count?: number, options?: InternationalFetchOptions): Promise<InternationalFramePlan[]>;
+export function recentInternationalFramePlans(providerId: InternationalProviderId, siteId: string, options?: InternationalFetchOptions): Promise<InternationalFramePlan[]>;
 export function internationalFrameFromPlan(plan: InternationalFramePlan, options?: InternationalFetchOptions): FrameDescriptor;
-export function latestInternationalFrame(providerId: "chmi" | "dmi" | "dwd" | "fmi" | "geosphere" | "jma" | "ord" | "shmu" | "smhi" | string, siteId: string, options?: InternationalFetchOptions): Promise<FrameDescriptor>;
-export function recentInternationalFrames(providerId: "chmi" | "dmi" | "dwd" | "fmi" | "geosphere" | "jma" | "ord" | "shmu" | "smhi" | string, siteId: string, count?: number, options?: InternationalFetchOptions): Promise<FrameDescriptor[]>;
-export function recentInternationalFrames(providerId: "chmi" | "dmi" | "dwd" | "fmi" | "geosphere" | "jma" | "ord" | "shmu" | "smhi" | string, siteId: string, options?: InternationalFetchOptions): Promise<FrameDescriptor[]>;
+export function latestInternationalFrame(providerId: InternationalProviderId, siteId: string, options?: InternationalFetchOptions): Promise<FrameDescriptor>;
+export function recentInternationalFrames(providerId: InternationalProviderId, siteId: string, count?: number, options?: InternationalFetchOptions): Promise<FrameDescriptor[]>;
+export function recentInternationalFrames(providerId: InternationalProviderId, siteId: string, options?: InternationalFetchOptions): Promise<FrameDescriptor[]>;
 export function communityRadarFeeds(options?: RadarSiteCatalogOptions): CommunityRadarFeed[];
 export function communityRadarFeed(feedOrId: string | CommunityRadarFeed | { id?: string; feedId?: string; pollUrl?: string; poll_url?: string; url?: string; label?: string; name?: string; site?: string; lat?: number; latitude?: number; lon?: number; lng?: number; longitude?: number; state?: string; region?: string; cluster?: string | null }): CommunityRadarFeed | null;
 export function communityRadarMarkers(options?: RadarSiteCatalogOptions): CommunityRadarMarker[];
@@ -2909,6 +3123,25 @@ export class BowEchoRadarToolbox {
   internationalRadarProvider(providerId: string): GlobalRadarProvider | null;
   internationalRadarSite(providerId: string, siteId: string): InternationalFramePlan["site"] | null;
   internationalRadarSite(siteIdOrDescriptor: string | InternationalRadarSite | InternationalFramePlan["site"]): InternationalFramePlan["site"] | null;
+  australiaNciSiteListUrl(options?: InternationalFetchOptions): string;
+  parseAustraliaNciSiteCsv(csv: string): AustraliaNciRadarSite[];
+  australiaNciTarlistUrl(siteId: string, date: string | Date, options?: InternationalFetchOptions): string;
+  australiaNciDailyZipUrl(siteId: string, date: string | Date, options?: InternationalFetchOptions): string;
+  parseAustraliaNciTarlist(siteId: string, date: string | Date, text: string, options?: InternationalFetchOptions): AustraliaNciTarlistItem[];
+  australiaNciFramePlansFromTarlist(siteId: string, date: string | Date, text: string, options?: InternationalFetchOptions): InternationalFramePlan[];
+  fetchAustraliaNciZipMemberBytes(zipUrl: string, memberName: string, options?: InternationalFetchOptions): Promise<Uint8Array>;
+  piemonteSiteListingUrl(siteId: string, options?: InternationalFetchOptions): string;
+  parsePiemonteVolumeListing(siteId: string, textOrEntries: string | Partial<AutoIndexEntry>[]): PiemonteVolumeItem[];
+  piemonteFramePlansFromListing(siteId: string, textOrEntries: string | Partial<AutoIndexEntry>[], options?: InternationalFetchOptions): InternationalFramePlan[];
+  lombardiaSiteListingUrl(siteId: string, options?: InternationalFetchOptions): string;
+  parseLombardiaProductListing(siteId: string, textOrEntries: string | Partial<AutoIndexEntry>[]): LombardiaProductItem[];
+  lombardiaFramePlansFromListing(siteId: string, textOrEntries: string | Partial<AutoIndexEntry>[], options?: InternationalFetchOptions): InternationalFramePlan[];
+  kaiaQueryBody(siteId: string, options?: InternationalFetchOptions): Record<string, unknown>;
+  parseKaiaQueryResults(siteId: string, textOrJson: string | Record<string, unknown>): KaiaVolumeItem[];
+  kaiaFramePlansFromQueryResults(siteId: string, pages: Array<string | Record<string, unknown>> | string | Record<string, unknown>, options?: InternationalFetchOptions): InternationalFramePlan[];
+  meteoRomaniaSiteListingUrl(siteId: string, options?: InternationalFetchOptions): string;
+  parseMeteoRomaniaListing(siteId: string, textOrEntries: string | Partial<AutoIndexEntry>[]): MeteoRomaniaMomentItem[];
+  meteoRomaniaFramePlansFromListing(siteId: string, textOrEntries: string | Partial<AutoIndexEntry>[], options?: InternationalFetchOptions): InternationalFramePlan[];
   smhiAreaCatalogUrl(options?: InternationalFetchOptions): string;
   smhiQcvolCatalogUrl(siteId: string, options?: InternationalFetchOptions): string;
   smhiDatedQcvolUrl(siteId: string, key: string, options?: InternationalFetchOptions): string | null;
@@ -2998,13 +3231,13 @@ export class BowEchoRadarToolbox {
   parseFmiVolumeListing(siteId: string, textOrListing: string | Partial<S3StyleListing>, options?: InternationalFetchOptions): FmiVolumeItem[];
   fmiFramePlansFromListing(siteId: string, textOrListing: string | Partial<S3StyleListing>, options?: InternationalFetchOptions): InternationalFramePlan[];
   fmiFramePlanFromListing(siteId: string, textOrListing: string | Partial<S3StyleListing>, options?: InternationalFetchOptions): InternationalFramePlan;
-  latestInternationalFramePlan(providerId: "chmi" | "dmi" | "dwd" | "fmi" | "geosphere" | "jma" | "ord" | "shmu" | "smhi" | string, siteId: string, options?: InternationalFetchOptions): Promise<InternationalFramePlan>;
-  recentInternationalFramePlans(providerId: "chmi" | "dmi" | "dwd" | "fmi" | "geosphere" | "jma" | "ord" | "shmu" | "smhi" | string, siteId: string, count?: number, options?: InternationalFetchOptions): Promise<InternationalFramePlan[]>;
-  recentInternationalFramePlans(providerId: "chmi" | "dmi" | "dwd" | "fmi" | "geosphere" | "jma" | "ord" | "shmu" | "smhi" | string, siteId: string, options?: InternationalFetchOptions): Promise<InternationalFramePlan[]>;
+  latestInternationalFramePlan(providerId: InternationalProviderId, siteId: string, options?: InternationalFetchOptions): Promise<InternationalFramePlan>;
+  recentInternationalFramePlans(providerId: InternationalProviderId, siteId: string, count?: number, options?: InternationalFetchOptions): Promise<InternationalFramePlan[]>;
+  recentInternationalFramePlans(providerId: InternationalProviderId, siteId: string, options?: InternationalFetchOptions): Promise<InternationalFramePlan[]>;
   internationalFrameFromPlan(plan: InternationalFramePlan, options?: InternationalFetchOptions): FrameDescriptor;
-  latestInternationalFrame(providerId: "chmi" | "dmi" | "dwd" | "fmi" | "geosphere" | "jma" | "ord" | "shmu" | "smhi" | string, siteId: string, options?: InternationalFetchOptions): Promise<FrameDescriptor>;
-  recentInternationalFrames(providerId: "chmi" | "dmi" | "dwd" | "fmi" | "geosphere" | "jma" | "ord" | "shmu" | "smhi" | string, siteId: string, count?: number, options?: InternationalFetchOptions): Promise<FrameDescriptor[]>;
-  recentInternationalFrames(providerId: "chmi" | "dmi" | "dwd" | "fmi" | "geosphere" | "jma" | "ord" | "shmu" | "smhi" | string, siteId: string, options?: InternationalFetchOptions): Promise<FrameDescriptor[]>;
+  latestInternationalFrame(providerId: InternationalProviderId, siteId: string, options?: InternationalFetchOptions): Promise<FrameDescriptor>;
+  recentInternationalFrames(providerId: InternationalProviderId, siteId: string, count?: number, options?: InternationalFetchOptions): Promise<FrameDescriptor[]>;
+  recentInternationalFrames(providerId: InternationalProviderId, siteId: string, options?: InternationalFetchOptions): Promise<FrameDescriptor[]>;
   communityRadarFeeds(options?: RadarSiteCatalogOptions): CommunityRadarFeed[];
   communityRadarFeed(feedOrId: string | CommunityRadarFeed): CommunityRadarFeed | null;
   communityRadarMarkers(options?: RadarSiteCatalogOptions): CommunityRadarMarker[];
@@ -3190,6 +3423,11 @@ export class UniversalRadarClient {
   readonly defaultOptions: UniversalRadarOpenOptions;
   readonly cooldownMs: number;
   sites(options?: LogicalRadarSiteOptions): LogicalRadarSite[];
+  sitesGeoJson(options?: LogicalRadarSiteOptions): LogicalRadarSiteFeatureCollection;
+  mapboxSiteSource(options?: LogicalRadarSiteOptions): MapboxLogicalRadarSiteSource;
+  configureCache(options?: WorkerCacheLimits): Promise<WorkerCacheStats>;
+  cacheStats(): Promise<WorkerCacheStats>;
+  clearCache(): Promise<{ cleared: boolean }>;
   site(siteRef: string | LogicalRadarSite): LogicalRadarSite | null;
   resolve(siteRef: string | LogicalRadarSite, options?: UniversalRadarOpenOptions): RadarResolutionPlan;
   sourceHealth(siteRef?: string | LogicalRadarSite): RadarSourceHealth[];
@@ -3206,6 +3444,9 @@ export interface UniversalRadarSessionSnapshot {
   product: string | null;
   cut: number | null;
   volumeTime: string | null;
+  frame: RadarSessionFrameSummary | null;
+  capabilities: CapabilityHints | null;
+  timeline: LoopTimelineEntry[];
 }
 
 export interface UniversalRadarPollResult {
@@ -3231,8 +3472,13 @@ export class UniversalRadarSession {
   frame(index?: number | "latest"): RenderedFrame | null;
   setIndex(index?: number | "latest"): RenderedFrame | null;
   draw(canvas: HTMLCanvasElement, index?: number | "latest"): RenderedFrame;
+  productChoices(options?: { index?: number | "latest"; product?: string; selectedProduct?: string; cut?: number; selectedCut?: number; availableOnly?: boolean; displayableOnly?: boolean }): ProductChoice[];
+  cutChoices(options?: { index?: number | "latest"; selectedCut?: number; displayableOnly?: boolean }): CutChoice[];
+  capabilities(options?: { index?: number | "latest"; site?: string; product?: string; selectedProduct?: string; cut?: number; selectedCut?: number; displayableOnly?: boolean; warmProducts?: string | string[]; recommendedWarmProducts?: string | string[] }): CapabilityHints;
+  timeline(options?: { index?: number | "latest"; currentIndex?: number | "latest"; now?: number }): LoopTimelineEntry[];
   textureLayer(index?: number | "latest", options?: RenderOptions): RadarTextureLayer;
-  mapbox(options: RenderOptions & { canvas: HTMLCanvasElement; index?: number | "latest"; sourceId?: string; layerId?: string; opacity?: number; fadeDuration?: number; emissiveStrength?: number; animate?: boolean }): { sourceId: string; layerId: string; radarLayer: RadarTextureLayer; source: MapboxRadarCanvasSource; layer: MapboxRadarRasterLayer };
+  mapbox(options: UniversalRadarMapboxOptions): UniversalRadarMapboxSpecs;
+  syncMapLibre(map: MapLibreMapLike, options: UniversalRadarMapSyncOptions): UniversalRadarMapSyncResult;
   setProduct(product: string, options?: UniversalRadarOpenOptions): Promise<this>;
   setCut(cut: number, options?: UniversalRadarOpenOptions): Promise<this>;
   poll(options?: UniversalRadarOpenOptions): Promise<UniversalRadarPollResult>;

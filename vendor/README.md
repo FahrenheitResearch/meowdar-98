@@ -6,18 +6,22 @@ The package exposes a typed JavaScript API, a Web Worker, and a WASM decoder/ren
 
 ## Universal Site API
 
-Version 0.2 adds a provider-independent API above the original provider-specific toolbox. Applications choose one logical physical radar; BowEcho ranks its source bindings, rejects stale or incomplete loops, retries an optional relay, fails over to another upstream, and records the selected source and every failed attempt.
+Version 0.2 adds a provider-independent API above the original provider-specific toolbox. Applications choose one logical physical radar; BowEcho ranks its source bindings, rejects stale or incomplete loops, retries an optional relay, fails over to another upstream, and records the selected source and every failed attempt. The built-in catalog covers all 14 international provider families in the current native BowEcho registry, so applications do not need to reimplement provider discovery or format quirks.
 
 ```js
 import { createRadarClient } from "./radar-toolbox.js";
 
 const radar = createRadarClient({
-  // Optional. Direct browser access remains preferred where CORS works.
+  // Required for full international-provider coverage. Direct browser access
+  // remains preferred automatically for sources whose CORS policy permits it.
   relayUrl: "https://radar-relay.example/radar",
 });
 
-const internationalSites = radar.sites({ live: true })
-  .filter((site) => site.countryCode !== "US");
+const internationalSites = radar.sites({
+  live: true,
+  source: "international",
+  dataClass: "polar-volume",
+});
 
 const session = await radar.open("DE:ASB", {
   frames: 6,
@@ -29,9 +33,9 @@ const session = await radar.open("DE:ASB", {
 session.draw(canvas);
 console.log(session.snapshot().provenance);
 
-const mapbox = session.mapbox({ canvas, opacity: 0.86 });
-map.addSource(mapbox.sourceId, mapbox.source);
-map.addLayer(mapbox.layer);
+// Mount once or refresh an existing MapLibre/Mapbox canvas source. Animation
+// defaults off so an idle radar layer does not keep the map repainting forever.
+session.syncMapLibre(map, { canvas, opacity: 0.86 });
 ```
 
 Logical IDs are country-prefixed (`US:KTLX`, `DE:ASB`, `JP:ITOK`, `DK:06177`). `radar.site()` also accepts existing `provider:site` references for migration. Existing calls such as `toolbox.loadInternationalLoop("dwd", "asb", options)` are unchanged.
@@ -53,11 +57,32 @@ const radar = createRadarClient({
 });
 ```
 
-See `examples/universal-international-radar.html` for a dependency-free site picker and `relay/` for the allowlisted, byte-preserving Cloudflare Worker fallback.
+See [`examples/universal-international-radar.html`](examples/universal-international-radar.html) for a dependency-free site picker, [`docs/UNIVERSAL_RADAR_API.md`](docs/UNIVERSAL_RADAR_API.md) for the complete small API, [`tests/live-matrix.html`](tests/live-matrix.html) for the end-to-end provider harness, its [latest retained result](tests/live-matrix-results-2026-07-29.md), and [`relay/`](relay/) for the allowlisted, byte-preserving Cloudflare Worker. A relay is mandatory if an application promises every supported provider: most international bindings cannot be fetched directly from a browser because of upstream CORS or preprocessing constraints.
 
 ## Install Shape
 
-This initial release is packaged as a static browser SDK. Import from `radar-toolbox.js` in a browser app or serve this directory directly while prototyping.
+Install the release tarball or self-host the release directory unchanged:
+
+```bash
+npm install https://github.com/FahrenheitResearch/bowecho-radar-toolbox/releases/download/v0.2.0/fahrenheitresearch-bowecho-radar-toolbox-0.2.0.tgz
+```
+
+The scoped package is prepared for a future npm-registry publication but is not
+currently published there. The module creates `worker.js`, which loads the files
+under `pkg/`; keep those assets beside `radar-toolbox.js` when self-hosting. The
+release includes matching TypeScript declarations.
+
+Package-aware bundlers can import the public API by package name:
+
+```js
+import { createRadarClient } from "@fahrenheitresearch/bowecho-radar-toolbox";
+
+const radar = createRadarClient({ relayUrl: "https://radar-relay.example/radar" });
+const session = await radar.open("DE:ASB", { product: "REF", frames: 4 });
+session.draw(document.querySelector("canvas"));
+```
+
+The relative imports below are the equivalent form for static self-hosting.
 
 ```js
 import {
@@ -110,7 +135,9 @@ const customFeed = toolbox.customPollLinkFeed(customLinks[0]);
 - SPC outlook polygon parsing/fetch planning, live/archive issue fallback, convective-day storm report parsing, dated report/WCM tornado-track fetch planning, event radar selection, and archive-window planning for track replay.
 - Browser imports for NEXRAD Level II, ODIM_H5, CfRadial 1.x classic netCDF, DORADE sweep, JMA polar radar GRIB2 tar byte buffers, and mobile/research radar ZIP archives.
 - Community GR2A `dir.list` feed planning and polling, plus saved custom poll-link normalization, map markers, and GR GIS import helpers.
-- Browser-plannable international feeds for SMHI, GeoSphere, SHMU, DWD, CHMI, JMA, EUMETNET ORD, DMI, and FMI.
+- Browser-plannable international feeds across all 14 BowEcho provider families: SMHI, DMI, GeoSphere, FMI, SHMU, DWD, CHMI, JMA, EUMETNET ORD, NCI Australia, ARPA Piemonte, ARPA Lombardia, KAIA Estonia, and ANM MeteoRomania.
+- Built-in preferred-source/fallback resolution for overlapping Estonia and Romania radars, with source-aware freshness rules and automatic direct-to-relay retry where browser CORS requires it.
+- Explicit freshness metadata distinguishes pollable real-time sources from delayed archives. Australia NCI is selectable and archive-capable, but is marked `archiveDelayed` rather than advertised as current weather.
 - Logical global radar IDs, extensible source bindings, direct/relay transport selection, freshness and completeness validation, health cooldowns, automatic failover, and per-loop provenance.
 - Map/renderer adapters for canvas, Mapbox/MapLibre, deck.gl, custom WebGL/WebGPU, Web Mercator view state, tile coverage, and radar quad meshes.
 - Product/cut capability hints, palette import/export, multi-site synchronized loops, pixel-level compositing, cross sections, native RHI/mobile-scan panels, storm/rotation overlays, TOR tracks, TDS markers, and decoded-volume diagnostics for 3D buffer planning.
@@ -118,6 +145,7 @@ const customFeed = toolbox.customPollLinkFeed(customLinks[0]);
 ## Rules For Generated UIs
 
 - Keep radar fetch/decode/render work client-side unless the user explicitly asks for server processing.
+- Use `createRadarClient` and logical IDs for global or international pickers so source filtering, freshness, relay selection, failover, and provenance stay in one contract.
 - Use `createRadarSession` for ordinary single-radar controls so product, tilt, cache warming, playback, and live polling share one state machine.
 - Use `session.setProduct()` and `session.setCut()` for product/tilt changes; do not reload loops for every control change.
 - Use `textureLayer`, `loopTextureLayers`, and the map adapter helpers for full-resolution georeferenced radar imagery.

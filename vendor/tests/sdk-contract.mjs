@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { gzipSync } from "node:zlib";
 import {
   COMMUNITY_RADAR_FEEDS,
   COMMUNITY_RADAR_MARKERS,
@@ -11,6 +12,9 @@ import {
   SUPPORTED_BYTE_FORMATS,
   SUPPORTED_ARCHIVE_FORMATS,
   archiveFrameWindow,
+  australiaNciDailyZipUrl,
+  australiaNciFramePlansFromTarlist,
+  australiaNciTarlistUrl,
   capabilityHintsFromMetadata,
   colorFamilies,
   colorFamilyForProduct,
@@ -30,6 +34,12 @@ import {
   jmaFramePlanFromStamp,
   jmaRadarBaseUrl,
   jmaTarUrl,
+  kaiaFramePlansFromQueryResults,
+  kaiaQueryBody,
+  lombardiaFramePlansFromListing,
+  lombardiaSiteListingUrl,
+  meteoRomaniaFramePlansFromListing,
+  meteoRomaniaSiteListingUrl,
   ordBucketBaseUrl,
   ordFramePlanFromKeys,
   ordFramePlansFromKeys,
@@ -74,6 +84,7 @@ import {
   frameProviders,
   extractMobileArchiveEntries,
   extractZipEntries,
+  fetchAustraliaNciZipMemberBytes,
   fetchCommunityDirList,
   fetchSpcEventDay,
   fetchSpcOutlook,
@@ -105,6 +116,8 @@ import {
   palettePreviewCss,
   parseGrPalette,
   parseAutoIndexListing,
+  parseAustraliaNciSiteCsv,
+  parseAustraliaNciTarlist,
   productCapability,
   productChoicesFromMetadata,
   productDescriptor,
@@ -116,6 +129,7 @@ import {
   nexradRealtimeListingUrl,
   nexradRealtimeSiteIds,
   parseNexradRealtimeSiteIds,
+  parsePiemonteVolumeListing,
   parseFmiVolumeListing,
   parseGeosphereVolumeListing,
   parseNexradArchiveListing,
@@ -173,6 +187,8 @@ import {
   recentInternationalFrames,
   recentInternationalFramePlans,
   recentCommunityFrames,
+  piemonteFramePlansFromListing,
+  piemonteSiteListingUrl,
   pollUrlName,
   pollUrlsMatch,
   s3StyleListingUrl,
@@ -292,6 +308,10 @@ assert.ok(frameProviders().find((provider) => provider.id === "nexrad-public").m
 assert.ok(frameProviders().find((provider) => provider.id === "custom-url").formats.includes("jma-grib2-tar"));
 assert.ok(frameProviders().find((provider) => provider.id === "browser-import").formats.includes("mobile-archive-zip"));
 assert.ok(frameProviders().find((provider) => provider.id === "community-gr2a").modes.includes("community-live"));
+assert.ok(frameProviders().find((provider) => provider.id === "international-australia-nci").modes.includes("archive-date"));
+assert.ok(frameProviders().find((provider) => provider.id === "international-arpa-lombardia").modes.includes("international-recent"));
+assert.ok(frameProviders().find((provider) => provider.id === "international-kaia").formats.includes("odim-h5"));
+assert.ok(frameProviders().find((provider) => provider.id === "international-meteoromania").modes.includes("international-live"));
 assert.ok(frameProviders().find((provider) => provider.id === "international-smhi").formats.includes("odim-h5"));
 assert.ok(frameProviders().find((provider) => provider.id === "international-geosphere").modes.includes("international-recent"));
 assert.ok(frameProviders().find((provider) => provider.id === "international-shmu").modes.includes("international-recent"));
@@ -303,12 +323,14 @@ assert.ok(frameProviders().find((provider) => provider.id === "international-dmi
 assert.ok(frameProviders().find((provider) => provider.id === "international-fmi").modes.includes("international-recent"));
 assert.equal(supportedByteFormats().find((format) => format.id === "nexrad-level2").kind, "volume");
 assert.equal(supportedArchiveFormats().find((format) => format.id === "mobile-archive-zip").kind, "archive");
-assert.equal(GLOBAL_RADAR_PROVIDERS.length, 11);
-assert.equal(INTERNATIONAL_RADAR_SITES.length, 159);
+assert.equal(GLOBAL_RADAR_PROVIDERS.length, 16);
+assert.equal(INTERNATIONAL_RADAR_SITES.length, 243);
 assert.equal(COMMUNITY_RADAR_FEEDS.length, 19);
 assert.equal(COMMUNITY_RADAR_MARKERS.length, 12);
 assert.equal(radarSourceCatalog({ query: "JMA" })[0].id, "jma");
 assert.equal(internationalRadarSites({ providerId: "jma" }).length, 20);
+assert.equal(internationalRadarSites({ providerId: "australia-nci" }).length, 71);
+assert.equal(internationalRadarSites({ country: "Italy" }).length, 4);
 assert.ok(internationalRadarSites({ country: "Norway" }).length >= 10);
 assert.equal(internationalRadarProvider("smhi").capabilities.clientSideReady, true);
 assert.equal(internationalRadarProvider("smhi").capabilities.recentPlan, true);
@@ -402,6 +424,111 @@ assert.deepEqual((await extractMobileArchiveEntries(mobileZip)).map((entry) => e
   "20260612_145530.SWP",
 ]);
 assert.equal((await extractZipEntries(mobileZip, { pattern: "readme" }))[0].fileName, "readme.txt");
+
+const australiaSiteCsv = `id,short_name,location,status,site_lat,site_lon,prechange_end,notes
+1,CampRd,Broadmeadows,OK,-37.6899,144.9472,-,not operational
+2,Melb,Melbourne,OK,-37.8553,144.7554,-,
+42,Tindal,Katherine (Tindal),CHECK,-14.5124,132.4431,-,
+200,Old,Old Radar,OK,-30,130,2020-01-01,`;
+assert.deepEqual(parseAustraliaNciSiteCsv(australiaSiteCsv).map((site) => site.id), ["2", "42"]);
+assert.equal(parseAustraliaNciSiteCsv(australiaSiteCsv)[0].label, "Melbourne / Melb (2)");
+assert.equal(australiaNciTarlistUrl("2", "2026-06-25"), "https://thredds.nci.org.au/thredds/fileServer/rq0/2/2026/list/2_20260625_tarlist.txt");
+assert.equal(australiaNciDailyZipUrl("2", "2026-06-25"), "https://thredds.nci.org.au/thredds/fileServer/rq0/2/2026/vol/2_20260625.pvol.zip");
+const australiaTarlist = `#fname,r_id,time_utc
+2_20260625_000000.pvol.h5,2,20260625_000000
+2_20260625_000500.pvol.h5,2,20260625_000500
+3_20260625_000500.pvol.h5,3,20260625_000500`;
+assert.deepEqual(parseAustraliaNciTarlist("2", "2026-06-25", australiaTarlist).map((frame) => frame.fileName), [
+  "2_20260625_000000.pvol.h5",
+  "2_20260625_000500.pvol.h5",
+]);
+const australiaPlan = australiaNciFramePlansFromTarlist("2", "2026-06-25", australiaTarlist, { count: 1 })[0];
+assert.equal(australiaPlan.identity, "australia-nci_2_2_20260625_000500.pvol.h5");
+assert.equal(australiaPlan.parts[0].zipMember, "2_20260625_000500.pvol.h5");
+assert.equal(australiaPlan.parts[0].preprocessing, "zip-member-range");
+
+const nciMemberName = "2_20260625_000500.pvol.h5";
+const nciMemberBytes = new Uint8Array([0x89, 0x48, 0x44, 0x46, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+const nciZip = storedZip([{ name: nciMemberName, bytes: nciMemberBytes }]);
+const nciRanges = [];
+const nciRangeFetch = async (_url, init = {}) => {
+  const value = typeof init.headers?.get === "function" ? init.headers.get("Range") : init.headers?.Range;
+  const match = String(value || "").match(/^bytes=(\d+)-(\d+)$/);
+  assert.ok(match, `missing range header: ${value}`);
+  const start = Number(match[1]);
+  const end = Math.min(Number(match[2]), nciZip.byteLength - 1);
+  nciRanges.push([start, end]);
+  const bytes = nciZip.slice(start, end + 1);
+  return {
+    ok: true,
+    status: 206,
+    statusText: "Partial Content",
+    headers: { get: (name) => String(name).toLowerCase() === "content-range" ? `bytes ${start}-${end}/${nciZip.byteLength}` : null },
+    arrayBuffer: async () => bytes.buffer,
+  };
+};
+assert.deepEqual(await fetchAustraliaNciZipMemberBytes("https://example.test/day.zip", nciMemberName, { fetch: nciRangeFetch }), nciMemberBytes);
+assert.ok(nciRanges.length >= 4, "range member extraction probes size, central directory, local header, and payload");
+
+assert.equal(piemonteSiteListingUrl("bric"), "https://www.arpa.piemonte.it/rischi_naturali/radar/bric/");
+const piemonteListing = `
+  <a href="PAGZ41_C_PIEM_20260626205502.h5">full old</a>
+  <a href="PAGZ41_C_PIEM_20260626205502RhoHVu.h5">sidecar</a>
+  <a href="PAGZ41_C_PIEM_20260626210002.h5">full new</a>`;
+assert.deepEqual(parsePiemonteVolumeListing("bric", piemonteListing).map((file) => file.fileName), [
+  "PAGZ41_C_PIEM_20260626205502.h5",
+  "PAGZ41_C_PIEM_20260626210002.h5",
+]);
+assert.equal(piemonteFramePlansFromListing("bric", piemonteListing, { count: 1 })[0].volumeTime, "2026-06-26T21:00:02Z");
+
+assert.equal(lombardiaSiteListingUrl("des"), "https://radarlive.arpalombardia.it/Volumi/DES/");
+const lombardiaListing = `
+  <a href="Desio.20260626T230000Z_DBZH.h5.gz">dbzh</a>
+  <a href="Desio.20260626T230000Z_VRADH.h5.gz">vel</a>
+  <a href="Desio.20260626T230000Z_ZDR.h5.gz">zdr</a>
+  <a href="Desio.20260626T230500Z_DBZH.h5.gz">partial</a>`;
+const lombardiaPlan = lombardiaFramePlansFromListing("des", lombardiaListing, { count: 1 })[0];
+assert.equal(lombardiaPlan.sourceItem.stamp, "20260626T230000Z");
+assert.deepEqual(lombardiaPlan.parts.map((part) => part.url.split("_").pop()), ["DBZH.h5.gz", "VRADH.h5.gz", "ZDR.h5.gz"]);
+assert.ok(lombardiaPlan.parts.every((part) => part.compression === "gzip"));
+
+const kaiaBody = kaiaQueryBody("eehar", { now: "2026-06-29T00:00:00Z" });
+assert.equal(kaiaBody.filter.and.children[0].isEqual.value, "Harku radar (HAR)");
+assert.equal(kaiaBody.filter.and.children[2].greaterThanOrEqual.value, "2026-06-15T00:00:00.000Z");
+const kaiaPage = {
+  nextBookmark: "*",
+  documents: [
+    { id: 100, metadata: { Timestamp: "2026-06-15T03:30:00.0000000+03:00", RMTitle: "HAR.202606150030.VOL.h5" }, fileMetadata: [{ id: 1, name: "HAR.202606150030.VOL.h5" }] },
+    { id: 104, metadata: { Timestamp: "2026-06-15T03:35:00.0000000+03:00", RMTitle: "HAR.202606150035.VOL.h5" }, fileMetadata: [{ id: 1, name: "HAR.202606150035.VOL.h5" }] },
+  ],
+};
+const kaiaPlans = kaiaFramePlansFromQueryResults("eehar", kaiaPage, { count: 1 });
+assert.equal(kaiaPlans[0].identity, "HAR.202606150035.VOL.h5");
+assert.equal(kaiaPlans[0].parts[0].url, "https://avaandmed.keskkonnaportaal.ee/api/lists/active/items/104/files/1");
+
+assert.equal(meteoRomaniaSiteListingUrl("BUC"), "https://opendata.meteoromania.ro/radar/BUC/");
+const romaniaListing = `
+  <a href="BUC_2026070718400200dBZ.hdf">dbz old</a>
+  <a href="BUC_2026070718400200V.hdf">vel old</a>
+  <a href="BUC_2026070718400200ZDR.hdf">zdr old</a>
+  <a href="BUC_2026070718450200dBZ.hdf">dbz fresh</a>
+  <a href="BUC_2026070718450200V.hdf">vel fresh</a>
+  <a href="BUC_2026070718450200Height.hdf">cartesian</a>`;
+const romaniaPlan = meteoRomaniaFramePlansFromListing("BUC", romaniaListing, { count: 1, now: "2026-07-07T18:52:44Z" })[0];
+assert.equal(romaniaPlan.sourceItem.stamp, "2026070718400200");
+assert.deepEqual(romaniaPlan.sourceItem.moments, ["dBZ", "V", "ZDR"]);
+assert.equal(romaniaPlan.parts.length, 3);
+const nciLatestFixture = await latestInternationalFramePlan("australia-nci", "2", {
+  now: "2026-06-27T00:00:00Z",
+  tarlistsByDate: { "2026-06-25": australiaTarlist },
+  fetch: async () => ({ ok: false, status: 404, statusText: "Not Found", text: async () => "" }),
+});
+assert.equal(nciLatestFixture.identity, "australia-nci_2_2_20260625_000500.pvol.h5");
+assert.equal((await latestInternationalFramePlan("arpa-piemonte", "bric", { listing: piemonteListing })).identity, "PAGZ41_C_PIEM_20260626210002.h5");
+assert.equal((await latestInternationalFramePlan("arpa-lombardia", "des", { listing: lombardiaListing })).sourceItem.stamp, "20260626T230000Z");
+assert.equal((await latestInternationalFramePlan("kaia", "eehar", { pages: [kaiaPage] })).identity, "HAR.202606150035.VOL.h5");
+assert.equal((await latestInternationalFramePlan("meteoromania", "BUC", { listing: romaniaListing, now: "2026-07-07T18:52:44Z" })).sourceItem.stamp, "2026070718400200");
+
 assert.equal(communityRadarFeeds({ state: "OK" }).length, 8);
 assert.equal(communityRadarFeed("WILU").pollUrl, "https://mesonet-nexrad.agron.iastate.edu/level2/raw/WILU");
 assert.equal(communityRadarMarkers({ query: "Norman" })[0].feedIds.length, 8);
@@ -457,7 +584,7 @@ assert.equal(customGlobalSites[0].source, "custom");
 assert.equal(nearestRadarSite({ lon: -87.325, lat: 35.254 }, { source: "custom", customPollLinks: customGisLinks, maxDistanceKm: 1 }).id, "fwlx");
 const globalSummary = radarSiteSourceSummary();
 assert.equal(globalSummary.sources.nexrad, 204);
-assert.equal(globalSummary.sources.international, 159);
+assert.equal(globalSummary.sources.international, 243);
 assert.equal(globalSummary.sources.community, 12);
 const globalGeo = globalRadarSitesGeoJson({ sources: ["international", "community"], query: "Japan" });
 assert.equal(globalGeo.type, "FeatureCollection");
@@ -976,6 +1103,41 @@ assert.deepEqual(recentOrdPlans.map((plan) => plan.volumeTime), [
 ]);
 const recentOrdFrames = await recentInternationalFrames("ord", "nlhrw", 2, { fetch: ordFetch, now: "2026-06-12T14:59:00Z" });
 assert.deepEqual(recentOrdFrames.map((frame) => frame.site), ["nlhrw", "nlhrw"]);
+
+const ordPartialUploadKeys = [
+  "2026/07/29/PL/plbrz/PVOL/plbrz@20260729T1811@0.5_1.0@DBZH.h5",
+  "2026/07/29/PL/plbrz/PVOL/plbrz@20260729T1811@0.5_1.0@VRADH.h5",
+  "2026/07/29/PL/plbrz/PVOL/plbrz@20260729T1821@0.5_1.0@VRADH.h5",
+];
+const ordCompleteBeforePartialPlan = ordFramePlanFromKeys("plbrz", "PVOL", ordPartialUploadKeys);
+assert.equal(ordCompleteBeforePartialPlan.volumeTime, "2026-07-29T18:11:00Z");
+assert.deepEqual(ordCompleteBeforePartialPlan.sourceItem.files.map((file) => file.momentText), ["DBZH", "VRADH"]);
+
+const ordBoundedFallbackKeys = [
+  "2026/07/29/PL/plbrz/PVOL/plbrz@20260729T1750@0.5_1.0@DBZH.h5",
+  "2026/07/29/PL/plbrz/PVOL/plbrz@20260729T1750@0.5_1.0@VRADH.h5",
+  "2026/07/29/PL/plbrz/PVOL/plbrz@20260729T1821@0.5_1.0@DBZH.h5",
+];
+const ordFreshReflectivityFallbackPlan = ordFramePlanFromKeys("plbrz", "PVOL", ordBoundedFallbackKeys);
+assert.equal(ordFreshReflectivityFallbackPlan.volumeTime, "2026-07-29T18:21:00Z");
+assert.deepEqual(ordFreshReflectivityFallbackPlan.sourceItem.files.map((file) => file.momentText), ["DBZH"]);
+
+const ordDublinMixedPlan = (await recentInternationalFramePlans("ord", "iedub", 1, {
+  keysByKind: {
+    PVOL: [
+      "2026/07/29/IE/iedub/PVOL/iedub@20260729T1800@0.5_1.0@VRADH.h5",
+    ],
+    SCAN: [
+      "2026/07/29/IE/iedub/SCAN/iedub@20260729T1815@0.5@DBZH.h5",
+      "2026/07/29/IE/iedub/SCAN/iedub@20260729T1816@1.0@DBZH.h5",
+      "2026/07/29/IE/iedub/SCAN/iedub@20260729T1817@1.5@DBZH.h5",
+    ],
+  },
+}))[0];
+assert.equal(ordDublinMixedPlan.volumeTime, "2026-07-29T18:17:00Z");
+assert.equal(ordDublinMixedPlan.sourceItem.objectKind, "SCAN+PVOL");
+assert.equal(ordDublinMixedPlan.sourceItem.files.some((file) => file.objectKind === "SCAN" && file.momentText === "DBZH"), true);
+assert.equal(ordDublinMixedPlan.sourceItem.files.some((file) => file.objectKind === "PVOL" && file.momentText === "VRADH"), true);
 
 const dmiItems = {
   type: "FeatureCollection",
@@ -1902,7 +2064,7 @@ const fakeWorker = {
     };
   },
   async render(frame, options) {
-    assert.ok(["fake-frame", "imported-a", "mobile.zip"].includes(frame.id) || frame.id.startsWith("KTLX20260612_") || frame.id.startsWith("WILU-") || frame.id.startsWith("smhi-") || frame.id.startsWith("geosphere-") || frame.id.startsWith("shmu-") || frame.id.startsWith("dwd-") || frame.id.startsWith("chmi-") || frame.id.startsWith("jma-") || frame.id.startsWith("ord-") || frame.id.startsWith("dmi-") || frame.id.startsWith("fmi-"), `unexpected render frame ${frame.id}`);
+    assert.ok(["fake-frame", "imported-a", "mobile.zip"].includes(frame.id) || frame.id.startsWith("KTLX20260612_") || frame.id.startsWith("WILU-") || frame.id.startsWith("smhi-") || frame.id.startsWith("geosphere-") || frame.id.startsWith("shmu-") || frame.id.startsWith("dwd-") || frame.id.startsWith("chmi-") || frame.id.startsWith("jma-") || frame.id.startsWith("ord-") || frame.id.startsWith("dmi-") || frame.id.startsWith("fmi-") || frame.id.startsWith("arpa-lombardia-"), `unexpected render frame ${frame.id}`);
     assert.ok(["REF", "DVEL"].includes(options.product));
     lastRenderOptions = options;
     return {
@@ -2172,6 +2334,38 @@ const fakeWorker = {
 };
 
 const toolbox = createRadarToolbox({ workerClient: fakeWorker });
+const internationalContextFrame = {
+  id: "fmi-context-frame",
+  cacheKey: "fmi-context-frame",
+  site: "FIANJ",
+  volumeTime: "2026-06-13T00:00:00Z",
+};
+const internationalContextLoop = {
+  site: "FIANJ",
+  mode: "live",
+  product: "REF",
+  cut: 0,
+  frames: [internationalContextFrame],
+  renderedFrames: [{
+    frame: internationalContextFrame,
+    width: 2,
+    height: 2,
+    rgba: new Uint8Array(16),
+  }],
+  meta: fakeMeta,
+  renderOptions: { width: 2, height: 2, product: "REF", cut: 0 },
+  siteDescriptor: { id: "FIANJ", name: "Anjalankoski", lat: 60.9, lon: 27.1 },
+  internationalProviderId: "fmi",
+  internationalSite: { id: "fianj", label: "Anjalankoski", lat: 60.9, lon: 27.1 },
+  source: "international",
+  get length() { return this.renderedFrames.length; },
+  frame(index = this.renderedFrames.length - 1) { return this.renderedFrames[index]; },
+};
+const rerenderedInternationalContext = await toolbox.rerenderLoop(internationalContextLoop, { product: "DVEL" });
+assert.equal(rerenderedInternationalContext.siteDescriptor.id, "FIANJ", "international rerender preserves its georeferencing descriptor");
+assert.equal(rerenderedInternationalContext.internationalProviderId, "fmi");
+assert.equal(rerenderedInternationalContext.internationalSite.id, "fianj");
+assert.equal(rerenderedInternationalContext.source, "international");
 assert.equal(toolbox.products().length, 21);
 assert.equal(toolbox.product("DVEL").group, "velocity");
 assert.ok(toolbox.frameProviders().some((provider) => provider.id === "browser-import"));
@@ -2817,6 +3011,31 @@ assert.equal(fmiInternationalTextures[0].site.id, "fianj");
 assert.equal(fmiInternationalTextures[0].site.lon, 27.1081);
 const fmiInternationalPoll = await toolbox.pollInternationalLive(fmiInternationalLoop, { fetch: fmiFetch, now: "2026-06-12T06:40:00Z" });
 assert.equal(fmiInternationalPoll.status, "idle");
+const lombardiaRawPart = new TextEncoder().encode("ODIM-H5-Lombardia-fixture");
+const lombardiaGzipPart = gzipSync(lombardiaRawPart);
+const lombardiaInternationalLoop = await toolbox.loadInternationalLoop("arpa-lombardia", "des", {
+  listing: lombardiaListing,
+  fetch: async () => ({
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    arrayBuffer: async () => lombardiaGzipPart.buffer.slice(
+      lombardiaGzipPart.byteOffset,
+      lombardiaGzipPart.byteOffset + lombardiaGzipPart.byteLength,
+    ),
+  }),
+  prefetchBytes: true,
+  frameCount: 1,
+  product: "REF",
+  width: 16,
+  height: 8,
+  rangeKm: 80,
+});
+assert.equal(lombardiaInternationalLoop.internationalProviderId, "arpa-lombardia");
+assert.equal(lombardiaInternationalLoop.frames[0].byteParts.length, 3);
+for (const part of lombardiaInternationalLoop.frames[0].byteParts) {
+  assert.deepEqual(part, lombardiaRawPart);
+}
 const sectionLoop = await toolbox.renderCrossSectionLoop(loop, {
   width: 20,
   height: 10,
