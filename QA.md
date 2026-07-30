@@ -22,11 +22,23 @@ The GLM controller suite covers:
 - Low Data resource caps; and
 - restoration of the operator's Full-mode lightning window.
 
+The global native-gate suites cover:
+
+- three-frame / 768 px mobile parity with desktop;
+- native gate/radial rendering through a MapLibre custom layer;
+- center-based gate indexing (`firstGateM` is gate zero's center);
+- exact wrapped and reversed azimuth ordering;
+- missing-radial and sector-scan transparency;
+- nearest-neighbor native texture sampling; and
+- hiding the Cartesian safety raster only after native rendering activates.
+
 Run locally:
 
 ```bash
 node tests/scan-quality.test.mjs
 node tests/glm-controller.test.mjs
+node tests/global-mobile-contract.test.mjs
+node tests/native-gate-renderer.test.mjs
 node --check app.js
 node --check scan-quality.js
 node --check palette-manager.js
@@ -96,6 +108,15 @@ verify:
     provider, and NOAA GOES S3 access from the actual deployment origin.
 11. OpenStreetMap attribution and compliance with the selected tile provider's
     usage policy.
+12. On `global.html`, confirm `body[data-native-radar="active"]` and
+    `body[data-cartesian-radar="hidden"]` after loading a radar.
+13. Zoom closely enough to see individual gates. Gate colors must remain crisp;
+    the visible overlay must not be the blurred 512/768 px Cartesian fallback.
+14. Exercise a NEXRAD site and at least one international site with REF, VEL,
+    and CC where available; pan and zoom after every product change.
+15. At a 390 px mobile viewport, verify the three-frame loop remains responsive,
+    the basemap stays visible through transparent gates, and no black radar quad
+    appears at 512, 768, or 1024 fallback sizes.
 
 Do not enable GLM by default or advertise 96-frame Full as a low-memory mode
 until the target browsers have passed that staging test.
