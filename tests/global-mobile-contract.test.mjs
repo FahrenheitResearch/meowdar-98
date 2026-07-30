@@ -7,8 +7,8 @@ const [script, styles] = await Promise.all([
 ]);
 
 assert.match(script, /initializeMap\(\);\s*if \(compactMobile\)/, "map initialization must not wait behind inventory I/O");
-assert.match(script, /ui\.frameCount\.value = "1"/, "mobile defaults to one frame");
-assert.match(script, /ui\.renderSize\.value = "512"/, "mobile defaults to a bounded render texture");
+assert.match(script, /ui\.frameCount\.value = "3"/, "mobile retains the public three-frame loop");
+assert.match(script, /ui\.renderSize\.value = "768"/, "mobile retains the standard fallback texture");
 assert.match(script, /compactMobile && sourceChanged[^\n]+clearCache/, "mobile clears prior-station worker state on source changes");
 assert.match(script, /session\.syncMapLibre\(map,[\s\S]+fitOptions/, "global app dogfoods the bounded SDK MapLibre refresh helper");
 assert.doesNotMatch(script, /animate:\s*true/, "global radar canvas does not keep MapLibre repainting while idle");
@@ -17,6 +17,15 @@ assert.doesNotMatch(
   /raster-resampling["']?\s*,\s*["']nearest["']/,
   "MapLibre 5.24 nearest-neighbor sampling must not reintroduce an opaque black radar footprint",
 );
+assert.match(script, /renderNativePpi\(request\.sourceFrame/, "the visible radar path requests native gate/radial RGBA");
+assert.match(script, /type:\s*"custom"[\s\S]+u_azimuth_rows/, "native gates use a MapLibre custom layer and an exact azimuth lookup");
+assert.match(script, /floor\(\(range_km - u_first_gate_km\) \/ u_gate_spacing_km \+ 0\.5\)/, "native sampling treats firstGateM as the center of gate zero");
+assert.match(script, /gl\.TEXTURE_MIN_FILTER, gl\.NEAREST/, "native gate textures are sampled without palette-color blending");
+assert.match(script, /gl\.getError\(\)/, "native texture upload errors restore the safety raster instead of hiding it");
+assert.match(script, /blendFuncSeparate\(gl\.SRC_ALPHA, gl\.ONE_MINUS_SRC_ALPHA, gl\.ONE, gl\.ONE_MINUS_SRC_ALPHA\)/, "custom-layer blending preserves framebuffer alpha");
+assert.match(script, /setCartesianRadarVisible\(false\)/, "the Cartesian fallback is hidden after native gates activate");
+assert.match(script, /buildNativeRadarMesh\(request\.site, rangeKm\)/, "native gates use the globally projected mesh");
+assert.match(script, /requestIdleCallback\(\(\) => resolve\(\)/, "background native frames wait for browser idle time");
 assert.match(script, /client\.configureCache\(/, "mobile cache limits use the universal client facade");
 assert.match(script, /client\.clearCache\(/, "mobile source changes clear cache through the universal client facade");
 assert.match(script, /ui\.productSelect\.addEventListener\("change", \(\) => \{ if \(session\) rerenderProduct\(\); \}\)/, "product changes rerender the loaded volume instead of downloading it again");
